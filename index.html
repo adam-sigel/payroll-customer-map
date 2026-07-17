@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payroll Customers — Boston Area</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --surface-1:     #fcfcfb; --surface-2:    #f9f9f7;
+    --text-primary:  #0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
+    --gridline:      #e1e0d9;
+    --promoter:      #0ca30c; --passive:#eda100; --detractor:#d03b3b; --no-nps:#898781;
+    --home-pin:      #2a78d6; --office-pin:#4a3aa7; --auto-ring:#eda100;
+    --good: #0ca30c; --bad: #d03b3b; --unknown: #c3c2b7;
+  }
+  body { font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--surface-2); color:var(--text-primary); height:100vh; display:flex; flex-direction:column; }
+  header { padding:7px 14px; background:var(--surface-1); border-bottom:1px solid var(--gridline); display:flex; align-items:center; gap:11px; flex-shrink:0; flex-wrap:wrap; }
+  header h1 { font-size:13px; font-weight:600; white-space:nowrap; }
+  .fg { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+  .fl { font-size:11px; color:var(--text-secondary); white-space:nowrap; }
+  .dv { width:1px; height:18px; background:var(--gridline); flex-shrink:0; }
+  .fb { font-size:11px; padding:3px 8px; border-radius:4px; border:1px solid var(--gridline); background:var(--surface-1); color:var(--text-secondary); cursor:pointer; white-space:nowrap; transition:background .1s,color .1s; }
+  .fb:hover { background:var(--surface-2); }
+  .fb.active { background:var(--text-primary); color:var(--surface-1); border-color:var(--text-primary); }
+  .legend { display:flex; gap:9px; align-items:center; margin-left:auto; flex-wrap:wrap; }
+  .li { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--text-secondary); }
+  .ld { width:8px; height:8px; border-radius:50%; border:1.5px solid rgba(0,0,0,0.15); flex-shrink:0; }
+  .lr { width:10px; height:10px; border-radius:50%; border:2px solid var(--auto-ring); flex-shrink:0; }
+  #map { flex:1; min-height:0; }
+
+  /* Popup */
+  .leaflet-popup-content-wrapper { border-radius:8px; box-shadow:0 4px 18px rgba(0,0,0,0.16); padding:0; overflow:hidden; min-width:290px; }
+  .leaflet-popup-content { margin:0; width:auto !important; }
+  .leaflet-popup-tip-container { display:none; }
+  .pu { padding:12px 14px; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .pu-name { font-size:13px; font-weight:600; color:#0b0b0b; margin-bottom:2px; line-height:1.3; }
+  .pu-addr { font-size:11px; color:#52514e; margin-bottom:7px; }
+  .pu-dists { display:flex; gap:14px; margin-bottom:7px; }
+  .pu-dist { font-size:11px; }
+  .pu-dist-label { color:#898781; }
+  .pu-dist-val { font-weight:600; color:#0b0b0b; }
+  .pu-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 12px; margin-bottom:7px; }
+  .pu-label { font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#898781; margin-bottom:1px; }
+  .pu-val { font-size:12px; font-weight:500; color:#0b0b0b; }
+  .pu-chips { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:7px; }
+  .chip { font-size:10px; padding:2px 6px; border-radius:3px; background:#f0efec; color:#52514e; font-weight:500; }
+  .chip.on { background:#e8f2ff; color:#1c5cab; }
+  .chip.auto { background:#fff4e0; color:#7a5000; border:1px solid #eda100; }
+  .pu-elig { border-top:1px solid #e1e0d9; padding-top:7px; margin-bottom:7px; }
+  .pu-elig-title { font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#898781; margin-bottom:5px; display:flex; align-items:center; gap:6px; }
+  .pu-elig-title span { font-weight:600; font-size:11px; color:#0b0b0b; text-transform:none; letter-spacing:0; }
+  .pu-elig-grid { display:grid; grid-template-columns:1fr 1fr; gap:3px 8px; }
+  .pu-elig-row { display:flex; align-items:center; gap:5px; font-size:11px; color:#52514e; }
+  .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+  .dot-yes { background:#0ca30c; }
+  .dot-no  { background:#d03b3b; }
+  .dot-unk { background:#c3c2b7; }
+  .pu-rep { font-size:11px; color:#52514e; border-top:1px solid #e1e0d9; padding-top:7px; }
+  .pu-rep a { color:#2a78d6; text-decoration:none; }
+  .pu-rep a:hover { text-decoration:underline; }
+
+  /* Pins */
+  .map-pin { position:relative; width:24px; height:32px; cursor:pointer; }
+  .map-pin svg { width:24px; height:32px; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.22)); transition:transform .1s; }
+  .map-pin:hover svg { transform:scale(1.15); }
+  .count-badge { position:absolute; top:3px; left:50%; transform:translateX(-50%); font-size:8px; font-weight:700; color:white; line-height:1; pointer-events:none; }
+  .auto-ring { position:absolute; top:-3px; left:-3px; width:30px; height:30px; border-radius:50%; border:2.5px solid var(--auto-ring); pointer-events:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Payroll Customers — Boston Area</h1>
+
+  <div class="fg">
+    <span class="fl">NPS:</span>
+    <button class="fb active" data-nps="all">All</button>
+    <button class="fb" data-nps="Promoter">Promoters</button>
+    <button class="fb" data-nps="Passive">Passives</button>
+    <button class="fb" data-nps="Detractor">Detractors</button>
+    <button class="fb" data-nps="none">No NPS</button>
+  </div>
+
+  <div class="dv"></div>
+
+  <div class="fg">
+    <span class="fl">Auto Payroll:</span>
+    <button class="fb active" data-ap="all">All</button>
+    <button class="fb" data-ap="Yes">Enabled*</button>
+    <button class="fb" data-ap="No">Not enabled</button>
+  </div>
+
+  <div class="dv"></div>
+
+  <div class="fg">
+    <span class="fl">Eligibility:</span>
+    <button class="fb active" data-elig="all">All</button>
+    <button class="fb" data-elig="eligible">Fully eligible</button>
+    <button class="fb" data-elig="1miss">1 criterion missing</button>
+    <button class="fb" data-elig="unknown">Data unknown</button>
+  </div>
+
+  <div class="dv"></div>
+
+  <div class="fg">
+    <span class="fl">Area:</span>
+    <button class="fb active" data-area="all">All</button>
+    <button class="fb" data-area="home">Near home (≤3 mi)</button>
+    <button class="fb" data-area="office">Near office (≤2 mi)</button>
+  </div>
+
+  <div class="legend">
+    <div class="li"><div class="ld" style="background:#0ca30c"></div>Promoter</div>
+    <div class="li"><div class="ld" style="background:#eda100"></div>Passive</div>
+    <div class="li"><div class="ld" style="background:#d03b3b"></div>Detractor</div>
+    <div class="li"><div class="ld" style="background:#898781"></div>No NPS</div>
+    <div class="li"><div class="lr"></div>Auto Payroll*</div>
+    <div class="li"><div class="ld" style="background:#2a78d6"></div>Home</div>
+    <div class="li"><div class="ld" style="background:#4a3aa7"></div>Office</div>
+  </div>
+</header>
+
+<div id="map"></div>
+
+<script>
+// Eligibility per company code from Snowflake
+// fields: [tips, active, pos, tax, tsAuto, live3mo, noBounce, allowPost]
+// 'Y'=Yes, 'N'=No, '?'=unknown/not found in system
+const ELIG = {
+  "1246":                {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"N",post:"Y"},
+  "1928beaconhill":      {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "89charles":           {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "aceituna":            {tips:"N",active:"Y",pos:"Y",tax:"N",tsAuto:"N",live3:"Y",bounce:"N",post:"Y"},
+  "acitrones2025":       {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "alcove":              {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "allinallday":         {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "alpinegroup":         {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"N",live3:"Y",bounce:"N",post:"Y"},
+  "americanflatbread":   {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "apexbar":             {tips:"N",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"N",post:"N"},
+  "bakey":               {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "baleia":              {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "bdfq":                {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "betterbagels":        {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "blacksheepbagelcafe": {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "boardwalksouthie":    {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "boloco":              {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "bostonia":            {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "broadway":            {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"N",post:"N"},
+  "cafeamaro":           {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "cambridgecommon":     {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "championpizzaboston": {tips:"N",active:"N",pos:"Y",tax:"N",tsAuto:"Y",live3:"N",bounce:"N",post:"N"},
+  "citytap95":           {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "city winery":         {tips:"N",active:"Y",pos:"Y",tax:"N",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "csidebar":            {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "cunardtavern":        {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"N",post:"Y"},
+  "dantegroup":          {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "deepcuts":            {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "donutvilla":          {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"N",post:"Y"},
+  "ducalipizzeria":      {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"N",post:"Y"},
+  "eljefesbc":           {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "eljefesne":           {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "franklinrg":          {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "fufulbakery":         {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "gabh":                {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "haveliindiancuisine": {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "hugosrestaurant":     {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "islandcreekoysters":  {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "joia":                {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "jplicks":             {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "justhummus":          {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "kahaani":             {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "landwer":             {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "laposada":            {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"N",post:"Y"},
+  "lasaisonbakery":      {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "lollacai":            {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "loushs":              {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "luciaboston":         {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "lulugreen":           {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "marcelinosseaport":   {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "meimei":              {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "menotomy":            {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "mesob":               {tips:"N",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "mimischukadiner":     {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "mnmrestaurantgroupllc":{tips:"N",active:"Y",pos:"Y",tax:"N",tsAuto:"N",live3:"Y",bounce:"N",post:"Y"},
+  "mok":                 {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "mortadellahead":      {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "mrsmurphys":          {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "novaboston":          {tips:"N",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "oysterbarnyhg":       {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "pennypackers":        {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "petesdockside":       {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "picklehospitality":   {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "pinktaco":            {tips:"N",active:"N",pos:"Y",tax:"N",tsAuto:"N",live3:"N",bounce:"N",post:"N"},
+  "pkl":                 {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "plntburger":          {tips:"N",active:"Y",pos:"Y",tax:"N",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "popupseaport":        {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "publicostreetbistro": {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "savr":                {tips:"Y",active:"N",pos:"Y",tax:"Y",tsAuto:"Y",live3:"N",bounce:"N",post:"N"},
+  "serafinaboston":      {tips:"Y",active:"N",pos:"Y",tax:"N",tsAuto:"N",live3:"N",bounce:"N",post:"N"},
+  "shannontavern":       {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "sicara":              {tips:"?",active:"Y",pos:"?",tax:"?",tsAuto:"?",live3:"?",bounce:"?",post:"?"},
+  "silverdovetea":       {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "sipboston":           {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "spicedelight":        {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "stagekaraoke":        {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "suramedford":         {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "tacoazul":            {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "thedraftbar":         {tips:"N",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"N",bounce:"Y",post:"Y"},
+  "thegreatestbar":      {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "theindo":             {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "thesaltypig":         {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "thetowerbar":         {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "tivolicatering":      {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "thegarretgroup":      {tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"N",live3:"Y",bounce:"N",post:"N"},
+  "trystrestaurant":     {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "ottopizzaharrison":   {tips:"Y",active:"N",pos:"Y",tax:"N",tsAuto:"N",live3:"N",bounce:"N",post:"N"},
+  "ottopizzawbroadway":  {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "vester":              {tips:"Y",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "wakuwaku":            {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"Y"},
+  "wishingcup":          {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "yankeelobstercompany":{tips:"Y",active:"Y",pos:"Y",tax:"N",tsAuto:"Y",live3:"Y",bounce:"Y",post:"N"},
+  "yellowdoorse":        {tips:"N",active:"N",pos:"Y",tax:"N",tsAuto:"N",live3:"N",bounce:"N",post:"N"},
+  "sweetcheeksq":        {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"N",live3:"Y",bounce:"Y",post:"N"},
+  "tsh":                 {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"Y",post:"Y"},
+  "laneta":              {tips:"N",active:"N",pos:"Y",tax:"N",tsAuto:"Y",live3:"N",bounce:"N",post:"N"},
+  "trillium":            {tips:"N",active:"N",pos:"Y",tax:"N",tsAuto:"N",live3:"N",bounce:"N",post:"N"},
+  "donutvilla":          {tips:"N",active:"Y",pos:"Y",tax:"Y",tsAuto:"Y",live3:"Y",bounce:"N",post:"Y"},
+};
+
+// cc = company code key into ELIG. null = data unavailable
+const DATA = [
+  {dh:6.4,do:0.1,lat:42.349958,lon:-71.047412,name:"Pink Taco - Boston Congress",addr:"374 Congress Street",city:"Boston",zip:"02210",locs:9,pnps:null,nps:"",tickets:0,sched:"Yes",tips:"No",ap:"No",owner:"David Miller",rep:"Jessica Kasmirski",email:"jkasmirski@toasttab.com",cc:"pinktaco"},
+  {dh:6.4,do:0.1,lat:42.35011,lon:-71.04714,name:"City Tap - Fort Point",addr:"10 Boston Wharf",city:"Boston",zip:"02210",locs:7,pnps:10,nps:"Promoter",tickets:80,sched:"Yes",tips:"Yes",ap:"No",owner:"Chris Coco",rep:"Christopher DAndrea",email:"cdandrea@toasttab.com",cc:"citytap95"},
+  {dh:6.4,do:0.1,lat:42.350342,lon:-71.0466173,name:"Aceituna - Seaport",addr:"57 Boston Wharf Road",city:"Boston",zip:"02210",locs:2,pnps:9,nps:"Promoter",tickets:8,sched:"Yes",tips:"No",ap:"No",owner:"Andrew Kurban",rep:"Jackie Sabol",email:"jsabol@toasttab.com",cc:"aceituna"},
+  {dh:6.3,do:0.1,lat:42.351099,lon:-71.047364,name:"Bartaco - Seaport",addr:"25 Thomson Place",city:"Boston",zip:"02210",locs:16,pnps:null,nps:"",tickets:19,sched:"Yes",tips:"No",ap:"No",owner:"Levi Martin",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:null},
+  {dh:6.3,do:0.1,lat:42.3513,lon:-71.04773,name:"Trillium Brewing Company - Fort Point",addr:"50 Thomson Place",city:"Boston",zip:"02210",locs:1,pnps:10,nps:"Promoter",tickets:6,sched:"Yes",tips:"No",ap:"No",owner:"JC Tetreault",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"trillium"},
+  {dh:6.4,do:0.1,lat:42.350699,lon:-71.045863,name:"Island Creek Oysters - Seaport",addr:"99 Autumn Lane",city:"Boston",zip:"02210",locs:4,pnps:null,nps:"",tickets:26,sched:"Yes",tips:"Yes",ap:"No",owner:"William Bennett",rep:"John McNamara",email:"john.mcnamara@toasttab.com",cc:"islandcreekoysters"},
+  {dh:6.4,do:0.2,lat:42.35174,lon:-71.046212,name:"Better Bagels",addr:"83 Seaport Boulevard",city:"Boston",zip:"02210",locs:2,pnps:10,nps:"Promoter",tickets:12,sched:"Yes",tips:"Yes",ap:"No",owner:"James Grimes",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"betterbagels"},
+  {dh:6.5,do:0.2,lat:42.34971,lon:-71.04389,name:"Rocco's Boston",addr:"250 B Street",city:"Boston",zip:"02210",locs:5,pnps:null,nps:"",tickets:17,sched:"Yes",tips:"Yes",ap:"No",owner:"Gavin Moseley",rep:"Michelle DeSantis",email:"michelle.desantis@toasttab.com",cc:null},
+  {dh:6.5,do:0.2,lat:42.350114,lon:-71.043857,name:"PopUp Bagels - Boston F1",addr:"70 Pier 4 Blvd Suite 330",city:"Boston",zip:"02210",locs:66,pnps:9,nps:"Promoter",tickets:32,sched:"Yes",tips:"Yes",ap:"No",owner:"Brian Harrington",rep:"John Bello",email:"john.bello@toasttab.com",cc:"popupseaport"},
+  {dh:6.5,do:0.2,lat:42.35053,lon:-71.04362,name:"Mia's - Boston Seaport",addr:"133 Seaport Boulevard",city:"Boston",zip:"02210",locs:6,pnps:9,nps:"Promoter",tickets:4,sched:"Yes",tips:"Yes",ap:"No",owner:"Aristotelis Spyropoulos",rep:"Matthew Feldman",email:"matthew.feldman@toasttab.com",cc:null},
+  {dh:6.5,do:0.3,lat:42.351222,lon:-71.043626,name:"Borrachito - Boston",addr:"70 Pier 4 Blvd Suite 270",city:"Boston",zip:"02210",locs:5,pnps:null,nps:"",tickets:18,sched:"Yes",tips:"Yes",ap:"No",owner:"Gavin Moseley",rep:"Lydia Hsu",email:"lydia@toasttab.com",cc:"thegarretgroup"},
+  {dh:6.5,do:0.3,lat:42.350743,lon:-71.042803,name:"Savr - Seaport",addr:"150 Seaport Boulevard",city:"Boston",zip:"02210",locs:11,pnps:9,nps:"Promoter",tickets:59,sched:"Yes",tips:"Yes",ap:"No",owner:"David Doyle",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"savr"},
+  {dh:6.6,do:0.3,lat:42.3481,lon:-71.043,name:"ReelHouse Oyster Bar Seaport",addr:"10 Waterside Avenue",city:"Boston",zip:"02210",locs:8,pnps:0,nps:"Detractor",tickets:32,sched:"Yes",tips:"Yes",ap:"No",owner:"Salvatore Boscarino",rep:"Marllon de Almeida",email:"marllon.de.almeida@toasttab.com",cc:"oysterbarnyhg"},
+  {dh:6.4,do:0.3,lat:42.352304,lon:-71.043578,name:"Limani Seaport POS",addr:"100 Northern Avenue",city:"Boston",zip:"02210",locs:1,pnps:null,nps:"",tickets:55,sched:"Yes",tips:"No",ap:"No",owner:"Christos Spyropoulos",rep:"Charlie Fay",email:"cfay@toasttab.com",cc:null},
+  {dh:6.2,do:0.3,lat:42.354269,lon:-71.047842,name:"Marcelino's Boutique Bar - Seaport",addr:"2 Northern Avenue",city:"Boston",zip:"02210",locs:2,pnps:0,nps:"Detractor",tickets:44,sched:"Yes",tips:"Yes",ap:"No",owner:"Marcelino Abou ali",rep:"Jeff Sousa",email:"jeff.sousa@toasttab.com",cc:"marcelinosseaport"},
+  {dh:6.3,do:0.3,lat:42.354087,lon:-71.045603,name:"Serafina Boston Seaport",addr:"11 Fan Pier Boulevard",city:"Boston",zip:"02210",locs:2,pnps:0,nps:"Detractor",tickets:10,sched:"Yes",tips:"Yes",ap:"No",owner:"Seth Greenberg",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"serafinaboston"},
+  {dh:6.0,do:0.4,lat:42.351975,lon:-71.055091,name:"Dalmoros - South Station",addr:"700 Atlantic Avenue",city:"Boston",zip:"02111",locs:6,pnps:null,nps:"",tickets:17,sched:"Yes",tips:"Yes",ap:"No",owner:"David Caruso",rep:"Cully Wilson",email:"mccully.wilson@toasttab.com",cc:null},
+  {dh:5.9,do:0.5,lat:42.354269,lon:-71.054845,name:"Society",addr:"99 High St",city:"Boston",zip:"02110",locs:2,pnps:null,nps:"",tickets:2,sched:"Yes",tips:"Yes",ap:"No",owner:"David Greaney",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:null},
+  {dh:5.9,do:0.5,lat:42.354376,lon:-71.055319,name:"High Street Place - The Temp Agency",addr:"100 High Street",city:"Boston",zip:"02110",locs:1,pnps:null,nps:"",tickets:10,sched:"Yes",tips:"No",ap:"No",owner:"Tiffani Faison",rep:"Brittany Earley",email:"brittany.earley@toasttab.com",cc:"sweetcheeksq"},
+  {dh:5.9,do:0.5,lat:42.354376,lon:-71.055319,name:"Tiger Baby",addr:"100 High St",city:"Boston",zip:"02110",locs:1,pnps:null,nps:"",tickets:31,sched:"Yes",tips:"No",ap:"No",owner:"Tiffani Faison",rep:"Artie Costa",email:"arturo.costa@toasttab.com",cc:null},
+  {dh:5.9,do:0.5,lat:42.35468,lon:-71.05494,name:"Better Bagels - Congress St",addr:"211 Congress St",city:"Boston",zip:"02110",locs:2,pnps:null,nps:"",tickets:15,sched:"Yes",tips:"Yes",ap:"No",owner:"James Grimes",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"betterbagels"},
+  {dh:5.9,do:0.5,lat:42.354372,lon:-71.055354,name:"The Charming Gardner",addr:"100 High Street",city:"Boston",zip:"02110",locs:1,pnps:null,nps:"",tickets:22,sched:"Yes",tips:"No",ap:"No",owner:"Tiffani Faison",rep:"Trevor Samuelson",email:"trevor.samuelson@toasttab.com",cc:"sweetcheeksq"},
+  {dh:5.9,do:0.5,lat:42.354372,lon:-71.055354,name:"Pennypacker - High St. Food Hall",addr:"100 High St",city:"Boston",zip:"02110",locs:18,pnps:null,nps:"",tickets:3,sched:"Yes",tips:"No",ap:"No",owner:"Kevin McGuire",rep:"Leo Evriviades",email:"leo.evriviades@toasttab.com",cc:"pennypackers"},
+  {dh:5.9,do:0.5,lat:42.354372,lon:-71.055354,name:"High Street Place - Tenderoni's",addr:"100 High Street",city:"Boston",zip:"02110",locs:18,pnps:null,nps:"",tickets:17,sched:"Yes",tips:"No",ap:"No",owner:"Tiffani Faison",rep:"Carol Stoddard",email:"cstoddard@toasttab.com",cc:"sweetcheeksq"},
+  {dh:5.9,do:0.5,lat:42.354372,lon:-71.055354,name:"High Street Place - Dive Bar",addr:"100 High St",city:"Boston",zip:"02110",locs:18,pnps:1,nps:"Detractor",tickets:8,sched:"Yes",tips:"No",ap:"No",owner:"Tiffani Faison",rep:"Carol Stoddard",email:"cstoddard@toasttab.com",cc:"sweetcheeksq"},
+  {dh:5.9,do:0.5,lat:42.354372,lon:-71.055354,name:"High Street Place - Bubble Bath",addr:"100 High St",city:"Boston",zip:"02129",locs:18,pnps:0,nps:"Detractor",tickets:15,sched:"Yes",tips:"No",ap:"No",owner:"Tiffani Faison",rep:"Carol Stoddard",email:"cstoddard@toasttab.com",cc:"sweetcheeksq"},
+  {dh:5.9,do:0.5,lat:42.354448,lon:-71.05543,name:"NEOTB - Food Truck 1",addr:"100 High Street",city:"Boston",zip:"02110",locs:3,pnps:null,nps:"",tickets:2,sched:"Yes",tips:"No",ap:"No",owner:"Gustavo Lecanda",rep:"Amanda Villanti",email:"amanda.villanti@toasttab.com",cc:null},
+  {dh:5.9,do:0.5,lat:42.354448,lon:-71.05543,name:"High Street Place - North East of the Border",addr:"100 High Street",city:"Boston",zip:"02110",locs:18,pnps:10,nps:"Promoter",tickets:8,sched:"Yes",tips:"No",ap:"No",owner:"Gustavo Lecanda",rep:"Carol Stoddard",email:"cstoddard@toasttab.com",cc:"sweetcheeksq"},
+  {dh:6.0,do:0.5,lat:42.356782,lon:-71.050364,name:"1928 Rowes Wharf",addr:"30 Rowes Wharf",city:"Boston",zip:"02110",locs:1,pnps:null,nps:"",tickets:26,sched:"Yes",tips:"Yes",ap:"No",owner:"Kristin Jenkins",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"1928beaconhill"},
+  {dh:5.9,do:0.5,lat:42.353591,lon:-71.056666,name:"Phin Coffee House",addr:"10 High St",city:"Boston",zip:"02110",locs:1,pnps:null,nps:"",tickets:27,sched:"Yes",tips:"No",ap:"No",owner:"Tran Tran",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:null},
+  {dh:5.9,do:0.5,lat:42.349993,lon:-71.0584802,name:"CFA South Station",addr:"700 Atlantic Avenue",city:"Boston",zip:"02110",locs:1,pnps:null,nps:"",tickets:8,sched:"Yes",tips:"No",ap:"No",owner:"Jason Yoo",rep:"Morgan Innes",email:"morgan.innes@toasttab.com",cc:null},
+  {dh:5.8,do:0.5,lat:42.35504,lon:-71.05583,name:"Aceituna Grill - Financial District",addr:"100 Federal Street",city:"Boston",zip:"02110",locs:2,pnps:8,nps:"Passive",tickets:8,sched:"Yes",tips:"No",ap:"No",owner:"AJ Kurban",rep:"Jackie Sabol",email:"jsabol@toasttab.com",cc:"aceituna"},
+  {dh:5.8,do:0.5,lat:42.35504,lon:-71.055992,name:"Tradesman - 100 Federal",addr:"100 Federal Street",city:"Boston",zip:"02110",locs:11,pnps:null,nps:"",tickets:4,sched:"Yes",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:5.8,do:0.5,lat:42.355061,lon:-71.055984,name:"100 Fed Restaurant",addr:"100 Federal Street",city:"Boston",zip:"02110",locs:11,pnps:9,nps:"Promoter",tickets:20,sched:"No",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:5.9,do:0.5,lat:42.35722,lon:-71.05124,name:"City Winery At The Greenway - Boston",addr:"Atlantic Avenue",city:"Boston",zip:"02111",locs:1,pnps:10,nps:"Promoter",tickets:2,sched:"Yes",tips:"No",ap:"No",owner:"Jeffrey King",rep:"Lydia Hsu",email:"lydia@toasttab.com",cc:"city winery"},
+  {dh:6.5,do:0.5,lat:42.342903,lon:-71.053134,name:"VESTER - Southie",addr:"105 West First Street",city:"Boston",zip:"02127",locs:3,pnps:null,nps:"",tickets:6,sched:"Yes",tips:"Yes",ap:"No",owner:"Nicole Liu",rep:"Kevin Martin",email:"k.martin@toasttab.com",cc:"vester"},
+  {dh:0.6,do:6.9,lat:42.414437,lon:-71.150259,name:"Donut Villa Diner - Arlington",addr:"319 Broadway",city:"Arlington",zip:"02474",locs:3,pnps:null,nps:"",tickets:23,sched:"Yes",tips:"No",ap:"No",owner:"Erin Bashllari",rep:"Marllon de Almeida",email:"marllon.de.almeida@toasttab.com",cc:"donutvilla"},
+  {dh:5.8,do:0.6,lat:42.356979,lon:-71.053551,name:"Fuful Bakery",addr:"274 Franklin St",city:"Boston",zip:"02110",locs:1,pnps:null,nps:"",tickets:45,sched:"Yes",tips:"No",ap:"No",owner:"Jingwei Lu",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"fufulbakery"},
+  {dh:5.8,do:0.6,lat:42.35745,lon:-71.05316,name:"Fin Point Oyster Bar & Grill",addr:"89 Broad St",city:"Boston",zip:"02110",locs:11,pnps:10,nps:"Promoter",tickets:26,sched:"Yes",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:5.8,do:0.6,lat:42.357388,lon:-71.053455,name:"Tradesman - 58 Batterymarch",addr:"58 Batterymarch St",city:"Boston",zip:"02110",locs:11,pnps:null,nps:"",tickets:12,sched:"Yes",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:0.6,do:5.8,lat:42.401662,lon:-71.136753,name:"Menotomy Grill & Tavern",addr:"25 Massachusetts Ave",city:"Arlington",zip:"02474",locs:1,pnps:null,nps:"",tickets:16,sched:"Yes",tips:"No",ap:"No",owner:"William Lyons",rep:"Kristin Dennis",email:"kristin.dennis@toasttab.com",cc:"menotomy"},
+  {dh:5.8,do:0.6,lat:42.35741,lon:-71.05406,name:"Lilys",addr:"33 Batterymarch Street",city:"Boston",zip:"02110",locs:11,pnps:6,nps:"Detractor",tickets:10,sched:"Yes",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Leo Evriviades",email:"leo.evriviades@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:5.8,do:0.6,lat:42.35768,lon:-71.053753,name:"Sando Table",addr:"71 Broad Street",city:"Boston",zip:"02109",locs:1,pnps:null,nps:"",tickets:15,sched:"Yes",tips:"No",ap:"No",owner:"Parinda Kamolnithi",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:null},
+  {dh:0.6,do:6.9,lat:42.414716,lon:-71.152011,name:"Haveli Indian Restaurant",addr:"464 Massachusetts Avenue",city:"Arlington",zip:"02474",locs:1,pnps:null,nps:"",tickets:6,sched:"Yes",tips:"Yes",ap:"No",owner:"Kulwinder Uppal",rep:"Danielle Dipietro",email:"danielle.dipietro@toasttab.com",cc:"haveliindiancuisine"},
+  {dh:5.7,do:0.6,lat:42.353746,lon:-71.059198,name:"Fete",addr:"25 Kingston Street",city:"Boston",zip:"02111",locs:2,pnps:8,nps:"Passive",tickets:5,sched:"Yes",tips:"No",ap:"No",owner:"Erson Merisier",rep:"Amanda Villanti",email:"amanda.villanti@toasttab.com",cc:null},
+  {dh:5.8,do:0.6,lat:42.351223,lon:-71.060371,name:"Waku Waku - Chinatown",addr:"2 Tyler Street",city:"Boston",zip:"02111",locs:9,pnps:10,nps:"Promoter",tickets:4,sched:"Yes",tips:"No",ap:"No",owner:"Henry Wong",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"wakuwaku"},
+  {dh:6.4,do:0.6,lat:42.342918,lon:-71.056572,name:"Kahaani",addr:"22 West Broadway",city:"Boston",zip:"02127",locs:2,pnps:null,nps:"",tickets:41,sched:"Yes",tips:"Yes",ap:"No",owner:"Smitesh Patel",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"kahaani"},
+  {dh:5.7,do:0.6,lat:42.356702,lon:-71.056583,name:"Tradesman - 176 Federal St",addr:"176 Federal St",city:"Boston",zip:"02110",locs:11,pnps:null,nps:"",tickets:8,sched:"No",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:0.6,do:6.9,lat:42.415207,lon:-71.151761,name:"Acitron",addr:"473 Massachusetts Ave",city:"Arlington",zip:"02474",locs:1,pnps:10,nps:"Promoter",tickets:14,sched:"Yes",tips:"Yes",ap:"No",owner:"Prakash 'Gotu' Hule",rep:"Kristin Dennis",email:"kristin.dennis@toasttab.com",cc:"acitrones2025"},
+  {dh:5.8,do:0.6,lat:42.351075,lon:-71.060775,name:"Shojo",addr:"9 Tyler St",city:"Boston",zip:"02111",locs:6,pnps:5,nps:"Detractor",tickets:6,sched:"Yes",tips:"Yes",ap:"No",owner:"Brian Moy",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:null},
+  {dh:7.0,do:0.6,lat:42.34493,lon:-71.037599,name:"Lord Hobo Seaport",addr:"2 Drydock Avenue",city:"Boston",zip:"02210",locs:3,pnps:null,nps:"",tickets:11,sched:"Yes",tips:"No",ap:"No",owner:"Jonathan Monie",rep:"Kristin Dennis",email:"kristin.dennis@toasttab.com",cc:null},
+  {dh:6.9,do:0.7,lat:42.347987,lon:-71.035861,name:"Yankee Lobster Co",addr:"300 Northern Ave",city:"Boston",zip:"02210",locs:1,pnps:10,nps:"Promoter",tickets:17,sched:"Yes",tips:"Yes",ap:"Yes",owner:"Michael Zanti",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"yankeelobstercompany"},
+  {dh:6.9,do:0.7,lat:42.34803,lon:-71.03584,name:"Commercial Lobster",addr:"300 Northern Ave",city:"Boston",zip:"02210",locs:1,pnps:null,nps:"",tickets:4,sched:"Yes",tips:"Yes",ap:"Yes",owner:"Joseph Zanti",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"yankeelobstercompany"},
+  {dh:5.7,do:0.7,lat:42.35613,lon:-71.05815,name:"Lily's Coffee & Cafe",addr:"33 Arch St",city:"Boston",zip:"02110",locs:11,pnps:10,nps:"Promoter",tickets:2,sched:"No",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Leo Evriviades",email:"leo.evriviades@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:7.0,do:0.7,lat:42.345489,lon:-71.036788,name:"Pete's Dockside",addr:"12 Channel Street",city:"Boston",zip:"02210",locs:1,pnps:null,nps:"",tickets:13,sched:"Yes",tips:"No",ap:"No",owner:"George Anninos",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"petesdockside"},
+  {dh:5.7,do:0.7,lat:42.357714,lon:-71.05628,name:"Tivoli Catering",addr:"82 Water St",city:"Boston",zip:"02109",locs:1,pnps:null,nps:"",tickets:7,sched:"Yes",tips:"No",ap:"No",owner:"Israel Bernardo",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"tivolicatering"},
+  {dh:5.7,do:0.7,lat:42.358,lon:-71.056,name:"Boloco - Congress St",addr:"50 Congress Street",city:"Boston",zip:"02109",locs:9,pnps:10,nps:"Promoter",tickets:91,sched:"Yes",tips:"Yes",ap:"No",owner:"John Pepper",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"boloco"},
+  {dh:6.8,do:0.7,lat:42.339854,lon:-71.049347,name:"Boardwalk Pizzeria - South Boston",addr:"309 D Street",city:"Boston",zip:"02127",locs:1,pnps:7,nps:"Passive",tickets:7,sched:"Yes",tips:"Yes",ap:"No",owner:"Donato Frattaroli",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"boardwalksouthie"},
+  {dh:5.8,do:0.7,lat:42.359381,lon:-71.05247,name:"Joia",addr:"195 State Street",city:"Boston",zip:"02109",locs:1,pnps:null,nps:"",tickets:33,sched:"Yes",tips:"Yes",ap:"No",owner:"Gianmarco Rinaldi",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"joia"},
+  {dh:5.7,do:0.7,lat:42.358972,lon:-71.054237,name:"Bostonia Public House",addr:"131 State Street",city:"Boston",zip:"02109",locs:1,pnps:7,nps:"Passive",tickets:63,sched:"Yes",tips:"Yes",ap:"No",owner:"David Greaney",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"bostonia"},
+  {dh:5.6,do:0.7,lat:42.355789,lon:-71.059497,name:"The Tower Bar",addr:"1 Franklin St",city:"Boston",zip:"02110",locs:1,pnps:10,nps:"Promoter",tickets:15,sched:"Yes",tips:"No",ap:"No",owner:"Chris Damian",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"thetowerbar"},
+  {dh:5.6,do:0.7,lat:42.357283,lon:-71.058208,name:"Champion Pizza - Boston",addr:"294 Washington Street",city:"Boston",zip:"02108",locs:12,pnps:null,nps:"",tickets:2,sched:"Yes",tips:"No",ap:"No",owner:"Mensure Balyen",rep:"Rose Balderson",email:"rose.balderson@toasttab.com",cc:"championpizzaboston"},
+  {dh:5.7,do:0.7,lat:42.359336,lon:-71.054113,name:"Apex Bar and Lounge",addr:"150 State Street",city:"Boston",zip:"02109",locs:1,pnps:10,nps:"Promoter",tickets:35,sched:"Yes",tips:"No",ap:"No",owner:"Lysah Bell",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"apexbar"},
+  {dh:6.7,do:0.7,lat:42.339592,lon:-71.051685,name:"Lulu Green",addr:"246 West Broadway",city:"Boston",zip:"02127",locs:3,pnps:null,nps:"",tickets:46,sched:"Yes",tips:"Yes",ap:"No",owner:"Mary Lattouf",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"lulugreen"},
+  {dh:5.7,do:0.7,lat:42.358769,lon:-71.056222,name:"Tradesmen - State St",addr:"53 State St",city:"Boston",zip:"02109",locs:11,pnps:null,nps:"",tickets:1,sched:"No",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:5.6,do:0.8,lat:42.354325,lon:-71.061956,name:"Back Deck",addr:"2 West St",city:"Boston",zip:"02111",locs:3,pnps:null,nps:"",tickets:9,sched:"Yes",tips:"No",ap:"No",owner:"Bradley Fredericks",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"bdfq"},
+  {dh:6.8,do:0.8,lat:42.338666,lon:-71.048831,name:"Hugo's Restaurant",addr:"40 West 3rd Street Place",city:"Boston",zip:"02127",locs:1,pnps:null,nps:"",tickets:3,sched:"Yes",tips:"Yes",ap:"No",owner:"Brahm Callahan",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"hugosrestaurant"},
+  {dh:5.6,do:0.8,lat:42.353904,lon:-71.062547,name:"French Quarter",addr:"545 Washington Street",city:"Boston",zip:"02111",locs:3,pnps:null,nps:"",tickets:2,sched:"Yes",tips:"No",ap:"No",owner:"Bradley Fredericks",rep:"Leo Evriviades",email:"leo.evriviades@toasttab.com",cc:"bdfq"},
+  {dh:5.6,do:0.8,lat:42.353473,lon:-71.062851,name:"Sip Wine Bar - LRG",addr:"581 Washington Street",city:"Boston",zip:"02111",locs:1,pnps:null,nps:"",tickets:13,sched:"Yes",tips:"Yes",ap:"No",owner:"Christopher Damian",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"sipboston"},
+  {dh:5.6,do:0.8,lat:42.35967,lon:-71.05601,name:"MMMac & Cheese",addr:"4 South Market Building",city:"Boston",zip:"02109",locs:8,pnps:null,nps:"",tickets:1,sched:"Yes",tips:"Yes",ap:"No",owner:"Iakovos Hadjigeorgis",rep:"Lydia Hsu",email:"lydia@toasttab.com",cc:"picklehospitality"},
+  {dh:6.8,do:0.8,lat:42.338433,lon:-71.049807,name:"Layla's American Tavern",addr:"332 West Broadway",city:"South Boston",zip:"02127",locs:1,pnps:6,nps:"Detractor",tickets:10,sched:"Yes",tips:"No",ap:"No",owner:"Patrick Dillon",rep:"Kristin Dennis",email:"kristin.dennis@toasttab.com",cc:null},
+  {dh:5.7,do:0.8,lat:42.36021,lon:-71.0548,name:"Dalmoros - Faneuil Hall",addr:"223 Faneuil Hall Marketplace",city:"Boston",zip:"02109",locs:6,pnps:null,nps:"",tickets:13,sched:"Yes",tips:"Yes",ap:"No",owner:"David Caruso",rep:"Cully Wilson",email:"mccully.wilson@toasttab.com",cc:null},
+  {dh:0.8,do:7.1,lat:42.4162396,lon:-71.1552032,name:"Tryst",addr:"689 Massachusetts Ave",city:"Arlington",zip:"02476",locs:2,pnps:4,nps:"Detractor",tickets:21,sched:"Yes",tips:"No",ap:"No",owner:"Sang Ho Kim",rep:"Kristin Dennis",email:"kristin.dennis@toasttab.com",cc:"trystrestaurant"},
+  {dh:6.0,do:0.8,lat:42.345199,lon:-71.062811,name:"PLNT Burger - Ink Block Boston",addr:"348 Harrison Avenue",city:"Boston",zip:"02118",locs:18,pnps:10,nps:"Promoter",tickets:4,sched:"Yes",tips:"No",ap:"No",owner:"Christopher Treloar",rep:"Kyle Fortman",email:"kyle.fortman@toasttab.com",cc:"plntburger"},
+  {dh:5.6,do:0.8,lat:42.359853,lon:-71.056465,name:"Bakey Faneuil Hall",addr:"4s Faneuil Hall Square",city:"Boston",zip:"02109",locs:5,pnps:null,nps:"",tickets:30,sched:"Yes",tips:"Yes",ap:"No",owner:"Or Ohana",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"bakey"},
+  {dh:6.0,do:0.8,lat:42.3454151,lon:-71.063447,name:"Yellow Door Taqueria South End",addr:"350 Harrison Ave",city:"Boston",zip:"02118",locs:1,pnps:2,nps:"Detractor",tickets:18,sched:"Yes",tips:"No",ap:"No",owner:"Jarek Mountain",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"yellowdoorse"},
+  {dh:5.5,do:0.8,lat:42.355972,lon:-71.062288,name:"Nova Restaurant",addr:"131 Tremont Street",city:"Boston",zip:"02111",locs:1,pnps:null,nps:"",tickets:17,sched:"Yes",tips:"No",ap:"No",owner:"Akylbek Kadyrakunov",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"novaboston"},
+  {dh:5.6,do:0.8,lat:42.354535,lon:-71.06335,name:"Bakey Commissary",addr:"151 Tremont Street",city:"Boston",zip:"02111",locs:5,pnps:null,nps:"",tickets:15,sched:"Yes",tips:"Yes",ap:"No",owner:"Or Ohana",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"bakey"},
+  {dh:5.6,do:0.8,lat:42.354535,lon:-71.06335,name:"Bakey",addr:"151 Tremont",city:"Boston",zip:"02111",locs:5,pnps:10,nps:"Promoter",tickets:116,sched:"Yes",tips:"Yes",ap:"No",owner:"Or Ohana",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"bakey"},
+  {dh:5.7,do:0.8,lat:42.351343,lon:-71.064579,name:"Fourth Wall",addr:"228 Tremont Street",city:"Boston",zip:"02116",locs:1,pnps:10,nps:"Promoter",tickets:64,sched:"Yes",tips:"No",ap:"No",owner:"Brett Walshaw",rep:"Jackie Sabol",email:"jsabol@toasttab.com",cc:"thedraftbar"},
+  {dh:6.0,do:0.8,lat:42.3452523,lon:-71.0635121,name:"Fuji at Ink Block",addr:"352 Harrison Ave",city:"Boston",zip:"02118",locs:10,pnps:8,nps:"Passive",tickets:12,sched:"Yes",tips:"No",ap:"No",owner:"Tony Liang",rep:"Chris Blickman",email:"c.blickman@toasttab.com",cc:null},
+  {dh:5.6,do:0.8,lat:42.351982,lon:-71.064476,name:"VIVA Karaoke",addr:"204 Tremont Street",city:"Boston",zip:"02116",locs:9,pnps:10,nps:"Promoter",tickets:11,sched:"Yes",tips:"No",ap:"No",owner:"Henry Wong",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"stagekaraoke"},
+  {dh:5.5,do:0.8,lat:42.359207,lon:-71.058772,name:"Wishing Cup",addr:"45 Court St",city:"Boston",zip:"02203",locs:1,pnps:null,nps:"",tickets:62,sched:"Yes",tips:"No",ap:"No",owner:"Karan Dhamecha",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"wishingcup"},
+  {dh:6.0,do:0.8,lat:42.344633,lon:-71.063259,name:"Bar Mezzana",addr:"360 Harrison Ave",city:"Boston",zip:"02118",locs:2,pnps:10,nps:"Promoter",tickets:31,sched:"Yes",tips:"No",ap:"No",owner:"Jefferson Macklin",rep:"Artie Costa",email:"arturo.costa@toasttab.com",cc:"tsh"},
+  {dh:5.5,do:0.8,lat:42.35847,lon:-71.05994,name:"Silver Dove Afternoon Tea",addr:"24 Tremont St",city:"Boston",zip:"02108",locs:1,pnps:null,nps:"",tickets:9,sched:"Yes",tips:"No",ap:"No",owner:"Patrick Brewster",rep:"Laura DeBiasio",email:"laura.debiasio@toasttab.com",cc:"silverdovetea"},
+  {dh:5.5,do:0.8,lat:42.359309,lon:-71.058961,name:"La Neta Government Center",addr:"100 City Hall Plaza",city:"Boston",zip:"02108",locs:1,pnps:null,nps:"",tickets:2,sched:"Yes",tips:"No",ap:"No",owner:"Allan Rodriguez",rep:"Roberto Rodriguez",email:"roberto.rodriguez@toasttab.com",cc:"laneta"},
+  {dh:6.1,do:0.9,lat:42.343519,lon:-71.062773,name:"Baleia - Boston",addr:"264 East Berkeley Street",city:"Boston",zip:"02118",locs:4,pnps:null,nps:"",tickets:38,sched:"Yes",tips:"Yes",ap:"No",owner:"James Cochener",rep:"Olivia Tanner",email:"ojones@toasttab.com",cc:"baleia"},
+  {dh:6.9,do:0.9,lat:42.3373,lon:-71.04803,name:"Si Cara - Southie",addr:"400 West Broadway",city:"Boston",zip:"02127",locs:1,pnps:null,nps:"",tickets:35,sched:"Yes",tips:"Yes",ap:"No",owner:"Michael Lombardi",rep:"Kevin Martin",email:"k.martin@toasttab.com",cc:"sicara"},
+  {dh:5.6,do:0.9,lat:42.352246,lon:-71.065004,name:"El Jefe's - Boston Common",addr:"80 Boylston St",city:"Boston",zip:"02116",locs:8,pnps:null,nps:"",tickets:15,sched:"Yes",tips:"Yes",ap:"No",owner:"John Schall",rep:"Leo Evriviades",email:"leo.evriviades@toasttab.com",cc:"eljefesbc"},
+  {dh:6.9,do:0.9,lat:42.337207,lon:-71.048761,name:"JP Licks - West Broadway",addr:"397 West Broadway St",city:"Boston",zip:"02127",locs:17,pnps:null,nps:"",tickets:3,sched:"Yes",tips:"No",ap:"No",owner:"Vincent Petryk",rep:"Christopher DAndrea",email:"cdandrea@toasttab.com",cc:"jplicks"},
+  {dh:5.5,do:0.9,lat:42.358449,lon:-71.060835,name:"Commissary Kitchen",addr:"1 Beacon Street",city:"Boston",zip:"02108",locs:11,pnps:null,nps:"",tickets:2,sched:"Yes",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:5.5,do:0.9,lat:42.358466,lon:-71.060843,name:"Beacon Coffee & Cafe",addr:"1 Beacon St",city:"Boston",zip:"02108",locs:11,pnps:null,nps:"",tickets:4,sched:"Yes",tips:"No",ap:"No",owner:"Mevzad Durakovic",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"mnmrestaurantgroupllc"},
+  {dh:5.9,do:0.9,lat:42.345617,lon:-71.064786,name:"Shore Leave",addr:"11 William E Mullins Way",city:"Boston",zip:"02118",locs:2,pnps:6,nps:"Detractor",tickets:6,sched:"Yes",tips:"No",ap:"No",owner:"Heather Lynch",rep:"Artie Costa",email:"arturo.costa@toasttab.com",cc:"tsh"},
+  {dh:5.9,do:0.9,lat:42.345586,lon:-71.064779,name:"Otto Pizza - Harrison Ave",addr:"345 Harrison Ave",city:"Boston",zip:"02118",locs:25,pnps:10,nps:"Promoter",tickets:20,sched:"Yes",tips:"Yes",ap:"No",owner:"Mark Kagan",rep:"Marcello Composto",email:"marcello.composto@toasttab.com",cc:"ottopizzaharrison"},
+  {dh:7.0,do:0.9,lat:42.336971,lon:-71.047347,name:"Otto Pizza - 416 W Broadway",addr:"416 West Broadway",city:"Boston",zip:"02127",locs:25,pnps:null,nps:"",tickets:17,sched:"Yes",tips:"Yes",ap:"No",owner:"Mark Kagan",rep:"Marcello Composto",email:"marcello.composto@toasttab.com",cc:"ottopizzawbroadway"},
+  {dh:7.1,do:0.9,lat:42.33721,lon:-71.043675,name:"Publico Street Bistro",addr:"11 Dorchester",city:"South Boston",zip:"02127",locs:1,pnps:10,nps:"Promoter",tickets:33,sched:"Yes",tips:"No",ap:"No",owner:"Theo Bougas",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"publicostreetbistro"},
+  {dh:5.4,do:0.9,lat:42.358215,lon:-71.062391,name:"Taco Azul Boston",addr:"21 Beacon Street",city:"Boston",zip:"02108",locs:1,pnps:null,nps:"",tickets:28,sched:"Yes",tips:"Yes",ap:"No",owner:"Daniel Leyva",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"tacoazul"},
+  {dh:7.0,do:0.9,lat:42.3363271,lon:-71.0476249,name:"Lincoln Tavern",addr:"425 West Broadway",city:"South Boston",zip:"02127",locs:12,pnps:3,nps:"Detractor",tickets:39,sched:"Yes",tips:"No",ap:"No",owner:"Michael Conlon",rep:"Mike Wilkins",email:"mwilkins@toasttab.com",cc:"broadway"},
+  {dh:7.0,do:0.9,lat:42.336283,lon:-71.047445,name:"Dalia",addr:"429 W Broadway",city:"Boston",zip:"02127",locs:11,pnps:null,nps:"",tickets:17,sched:"No",tips:"Yes",ap:"No",owner:"Michael Conlon",rep:"Matthew De Binder",email:"matthew.de.binder@toasttab.com",cc:"broadway"},
+];
+
+const CRIT_LABELS = {tips:"Tips integration",active:"Active status",pos:"POS customer",tax:"Tax tasks complete",tsAuto:"TS auto-approval",live3:"Live 3+ months",bounce:"No bounces 6mo",post:"Allowed to post"};
+
+const NPS_COLOR = {Promoter:"#0ca30c",Passive:"#eda100",Detractor:"#d03b3b","":"#898781"};
+
+function eligScore(cc) {
+  if (!cc || !ELIG[cc]) return null;
+  const e = ELIG[cc];
+  const vals = Object.values(e);
+  if (vals.some(v => v === '?')) return -1; // unknown
+  return vals.filter(v => v === 'Y').length;
+}
+
+function pinColor(c) { return NPS_COLOR[c.nps] || "#898781"; }
+
+function makePinIcon(color, locs, isAuto) {
+  const badge = locs > 1 ? `<span class="count-badge">${locs > 9 ? "9+" : locs}</span>` : "";
+  const ring  = isAuto ? '<div class="auto-ring"></div>' : "";
+  const svg   = `<svg viewBox="0 0 24 32" xmlns="http://www.w3.org/2000/svg"><path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 20 12 20s12-11 12-20C24 5.373 18.627 0 12 0z" fill="${color}" stroke="rgba(0,0,0,0.18)" stroke-width="0.75"/><circle cx="12" cy="12" r="4.5" fill="rgba(255,255,255,0.85)"/></svg>`;
+  return L.divIcon({html:`<div class="map-pin">${ring}${svg}${badge}</div>`,className:"",iconSize:[24,32],iconAnchor:[12,32],popupAnchor:[0,-36]});
+}
+
+function makeSpecialIcon(color, label) {
+  const svg = `<svg viewBox="0 0 24 32" xmlns="http://www.w3.org/2000/svg"><path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 20 12 20s12-11 12-20C24 5.373 18.627 0 12 0z" fill="${color}" stroke="rgba(0,0,0,0.18)" stroke-width="0.75"/><text x="12" y="16" text-anchor="middle" font-size="9" font-weight="800" fill="white" font-family="system-ui">${label}</text></svg>`;
+  return L.divIcon({html:`<div class="map-pin">${svg}</div>`,className:"",iconSize:[24,32],iconAnchor:[12,32],popupAnchor:[0,-36]});
+}
+
+function npsHtml(c) {
+  if (c.pnps === null) return '<span style="color:#898781">—</span>';
+  const col = NPS_COLOR[c.nps] || "#898781";
+  return `<span style="color:${col};font-weight:600">${c.pnps}</span>&nbsp;<span style="color:${col};font-size:10px">${c.nps}</span>`;
+}
+
+function eligHtml(cc) {
+  if (!cc) return '<div style="font-size:11px;color:#898781;font-style:italic">Company code not found — eligibility unavailable</div>';
+  const e = ELIG[cc];
+  if (!e) return '<div style="font-size:11px;color:#898781;font-style:italic">Eligibility data not available</div>';
+  const passing = Object.values(e).filter(v => v === 'Y').length;
+  const total = Object.keys(e).length;
+  const allPass = passing === total;
+  const scoreColor = allPass ? '#0ca30c' : passing >= 6 ? '#eda100' : '#d03b3b';
+  const rows = Object.entries(CRIT_LABELS).map(([k, label]) => {
+    const v = e[k];
+    const cls = v === 'Y' ? 'dot-yes' : v === 'N' ? 'dot-no' : 'dot-unk';
+    const text = v === 'Y' ? label : v === 'N' ? `<span style="color:#d03b3b">${label}</span>` : label;
+    return `<div class="pu-elig-row"><div class="dot ${cls}"></div>${text}</div>`;
+  }).join('');
+  return `
+    <div class="pu-elig-title">Auto Payroll Eligibility&nbsp;<span style="color:${scoreColor}">${passing}/${total}</span></div>
+    <div class="pu-elig-grid">${rows}</div>`;
+}
+
+function makePopup(c) {
+  return `<div class="pu">
+    <div class="pu-name">${c.name}</div>
+    <div class="pu-addr">${c.addr}, ${c.city} ${c.zip}</div>
+    <div class="pu-dists">
+      <div class="pu-dist"><span class="pu-dist-label">🏠 Home: </span><span class="pu-dist-val">${c.dh} mi</span></div>
+      <div class="pu-dist"><span class="pu-dist-label">🏢 Office: </span><span class="pu-dist-val">${c.do} mi</span></div>
+    </div>
+    <div class="pu-grid">
+      <div><div class="pu-label">pNPS</div><div class="pu-val">${npsHtml(c)}</div></div>
+      <div><div class="pu-label">Locations</div><div class="pu-val">${c.locs}</div></div>
+      <div><div class="pu-label">Care tickets (12mo)</div><div class="pu-val">${c.tickets}</div></div>
+      <div><div class="pu-label">Business owner</div><div class="pu-val" style="font-size:11px">${c.owner||"—"}</div></div>
+    </div>
+    <div class="pu-chips">
+      <span class="chip on">Payroll</span>
+      ${c.ap==="Yes"?'<span class="chip auto">Auto Payroll*</span>':""}
+      ${c.sched==="Yes"?'<span class="chip on">Scheduling</span>':'<span class="chip">Scheduling</span>'}
+      ${c.tips==="Yes"?'<span class="chip on">Tips Mgr</span>':'<span class="chip">Tips Mgr</span>'}
+    </div>
+    <div class="pu-elig">${eligHtml(c.cc)}</div>
+    <div class="pu-rep"><strong>${c.rep}</strong> &middot; <a href="mailto:${c.email}">${c.email}</a></div>
+  </div>`;
+}
+
+const map = L.map("map").setView([42.383, -71.07], 12);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains:"abcd",maxZoom:19
+}).addTo(map);
+
+L.marker([42.4073,-71.1454],{icon:makeSpecialIcon("#2a78d6","H")})
+  .addTo(map).bindPopup('<div class="pu"><div class="pu-name">Your Home</div><div class="pu-addr">East Arlington, MA 02474</div></div>');
+L.marker([42.3498,-71.0484],{icon:makeSpecialIcon("#4a3aa7","O")})
+  .addTo(map).bindPopup('<div class="pu"><div class="pu-name">Toast HQ</div><div class="pu-addr">333 Summer Street, Boston, MA 02210</div></div>');
+
+const noteCtrl = L.control({position:"bottomleft"});
+noteCtrl.onAdd = () => {
+  const d = L.DomUtil.create("div");
+  d.style.cssText = "background:rgba(252,252,251,0.93);padding:6px 10px;border-radius:6px;font-size:10px;color:#52514e;border:1px solid #e1e0d9;max-width:280px;line-height:1.45;";
+  d.innerHTML = "* <strong>Auto Payroll</strong>: best-effort proxy — 2 confirmed near Boston. &bull; Eligibility criteria from live Snowflake data. Tax tasks = latest quarter, all FEINs must be complete.";
+  return d;
+};
+noteCtrl.addTo(map);
+
+const markerLayer = L.layerGroup().addTo(map);
+let activeNps="all", activeAp="all", activeElig="all", activeArea="all";
+
+function renderMarkers() {
+  markerLayer.clearLayers();
+  DATA.forEach(c => {
+    if (activeNps!=="all" && activeNps!=="none" && c.nps!==activeNps) return;
+    if (activeNps==="none" && c.nps!=="") return;
+    if (activeAp!=="all" && c.ap!==activeAp) return;
+    if (activeArea==="home"   && c.dh>3) return;
+    if (activeArea==="office" && c.do>2) return;
+    if (activeElig !== "all") {
+      const score = eligScore(c.cc);
+      if (activeElig === "eligible"   && score !== 8) return;
+      if (activeElig === "1miss"      && score !== 7) return;
+      if (activeElig === "unknown"    && score !== null && score !== -1) return;
+    }
+    L.marker([c.lat,c.lon],{icon:makePinIcon(pinColor(c),c.locs,c.ap==="Yes")})
+      .bindPopup(makePopup(c),{maxWidth:340,minWidth:300})
+      .addTo(markerLayer);
+  });
+}
+
+renderMarkers();
+
+[["nps",v=>activeNps=v],["ap",v=>activeAp=v],["elig",v=>activeElig=v],["area",v=>activeArea=v]].forEach(([attr,setter])=>{
+  document.querySelectorAll(`[data-${attr}]`).forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      document.querySelectorAll(`[data-${attr}]`).forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      setter(btn.dataset[attr]);
+      renderMarkers();
+    });
+  });
+});
+</script>
+</body>
+</html>
