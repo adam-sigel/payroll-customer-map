@@ -1,0 +1,9 @@
+.vercel
+.DS_Store
+download.txt
+gdoc_export.md
+__pycache__/
+
+# Plaintext customer data — index.html is password-gated on purpose
+map.source.html
+build/map_data.csv
