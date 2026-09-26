@@ -1,0 +1,12 @@
+Hi {first_name},
+
+I'm Adam and I'm on the R&D team for Toast Payroll. Every month I like to get out from behind my desk to meet with customers and see how they run their payroll playbook and get feedback on some upcoming features we're considering. Are you open to a visit sometime next month?
+
+I'm looking to come onsite for about 90 minutes, ideally on a Monday or Tuesday when you're running payroll. There's no extra prep on your end; I'd just ride shotgun while you run payroll exactly where and how you always do, asking a few questions and taking some notes along the way. The parts where you work outside of or around Toast are especially useful to see.
+
+This is research, not a sales call. Our objective is to make payroll—and any other related aspect of labor management—as seamless and reliable as possible.
+
+What does your schedule look like in {next_month}? Happy to work around your calendar.
+
+Thanks,
+Adam

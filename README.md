@@ -23,9 +23,9 @@ names, addresses, and contact emails in the clear, which is the reason
 
 ## Cohort
 
-Payroll-Live restaurant locations within **6 mi of Toast HQ** (333 Summer St) or
-**3 mi of home** (East Arlington). The home radius is kept so the "Near home"
-filter stays populated — home is ~7 mi from the office.
+Payroll-Live restaurant locations within **15 mi of Toast HQ** (333 Summer St).
+Home (East Arlington) stays on the map as a reference pin only — there's no
+separate home-radius filter or inclusion.
 
 ## Encryption
 
@@ -35,15 +35,30 @@ existing `index.html` as its gate template and swaps only the `PAYLOAD` line, so
 the two cannot drift apart. Losing the password means rebuilding from step 1 —
 it is not recoverable from the ciphertext.
 
+## Outreach tracking
+
+`build/outreach_log.csv` (`cc, last_emailed, last_visited`) is git-tracked —
+just company codes and dates, no PII. `gen_map.py` left-joins it onto the
+Snowflake extract by `cc`.
+
+- **Emailed** is synced from Gmail on demand: ask Claude Code to "sync the
+  outreach log" — it does one bulk Sent-mail search via the `gws` CLI, matches
+  recipients against each customer's `poster_email`, and updates the log. Only
+  catches customers with a `poster_email` on file, and only if you emailed
+  that exact address.
+- **Visited** is manual — tell Claude Code, e.g. "mark Foxglove Terrace
+  visited on 9/20."
+- **Drafting outreach emails** is a Claude Code action, not an in-map button:
+  ask it to draft for a customer (or a filtered set) and it fills
+  `build/outreach_template.txt` and creates an unsent Gmail draft via
+  `gws gmail users drafts create`. Nothing is ever sent automatically.
+
+See `MAP_SPEC.md` for the full spec.
+
 ## Caveats baked into the map
 
-- **Auto Payroll enrollment is not tracked in Snowflake.** The two "Enabled"
-  customers are hand-curated (`AP_YES` in `build/gen_map.py`); everything else
-  defaults to "Not enabled".
-- **"Tax tasks complete" is a proxy** — no tax-task table exists, so it checks
-  whether every active FEIN has posted tax rows this quarter (~82% agreement
-  with the previously hand-collected values).
-- **pNPS coverage is thin** (66 of 353 locations) — most pins are grey "No NPS".
+- **pNPS coverage is thin** — most pins are grey "No NPS".
 - **"Last processed payroll"** is the user on the most recent successful payroll
-  *open* event, resolved via Estratex email → Toastweb name (215 of 217
-  customers with any open event).
+  *open* event, resolved via Estratex email → Toastweb name.
+- **"Last payroll run"** (`MOST_RECENT_CHECK_DATE`) can occasionally show a
+  future date — a small share of rows platform-wide are pre-entered runs.

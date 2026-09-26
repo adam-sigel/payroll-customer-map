@@ -1,7 +1,6 @@
 -- ============================================================================
 -- Payroll Customer Map — production data build
--- Cohort: payroll-Live restaurant locations within 6 mi of Toast HQ,
---         plus within 3 mi of home (keeps the "Near home" filter populated).
+-- Cohort: payroll-Live restaurant locations within 15 mi of Toast HQ.
 -- ============================================================================
 WITH
 -- ── Deduplicated Salesforce customer rows (many SF children per EC GUID) ──────
@@ -44,7 +43,7 @@ loc AS (
 ),
 
 cohort AS (
-    SELECT * FROM loc WHERE dist_office <= 6 OR dist_home <= 3
+    SELECT * FROM loc WHERE dist_office <= 15
 ),
 
 ec_ids AS (SELECT DISTINCT EC_CUSTOMER_GUID FROM cohort),
@@ -56,6 +55,14 @@ loc_counts AS (
     JOIN TOAST.EC_CORE.EC_CUSTOMER ec ON ecl.EC_CUSTOMER_ID = ec.EC_CUSTOMER_ID
     JOIN ec_ids i                     ON ec.EC_CUSTOMER_GUID = i.EC_CUSTOMER_GUID
     WHERE ecl.PAYROLL_STATUS = 'Live'
+    GROUP BY 1
+),
+
+-- ── Active employee count per EC customer ────────────────────────────────────
+emp_active AS (
+    SELECT e.CUSTOMER_UUID, COUNT_IF(e.EC_EMPLOYMENT_STATUS = 'Active') AS active_employees
+    FROM TOAST.EC_CORE.EC_EMPLOYEE e
+    JOIN ec_ids i ON e.CUSTOMER_UUID = i.EC_CUSTOMER_GUID
     GROUP BY 1
 ),
 
@@ -94,6 +101,23 @@ sched AS (
     WHERE rn = 1 AND org_status = 'Subscribed'
 ),
 
+-- ── Tips Manager active ───────────────────────────────────────────────────────
+tips_active AS (
+    SELECT DISTINCT t.CUSTOMER_UUID
+    FROM TOAST.SOURCE_EC.TIPS_CURRENT t JOIN ec_ids i ON t.CUSTOMER_UUID = i.EC_CUSTOMER_GUID
+),
+
+-- ── Bounced payroll in the last 6 months ──────────────────────────────────────
+-- Bounces: any transaction type, last 6 months. DELETED is boolean FALSE for
+-- most rows and NULL only on older ones — COALESCE, don't test IS NULL.
+bounce_6mo AS (
+    SELECT DISTINCT b.CUSTOMER_UUID
+    FROM TOAST.SOURCE_EC.BOUNCED_PAYPERIOD_CURRENT b JOIN ec_ids i ON b.CUSTOMER_UUID = i.EC_CUSTOMER_GUID
+    WHERE DATEADD('millisecond', b.BOUNCE_DATE, '1970-01-01'::TIMESTAMP_NTZ)
+              >= DATEADD('month', -6, CURRENT_DATE()::TIMESTAMP_NTZ)
+      AND COALESCE(b.DELETED, FALSE) = FALSE
+),
+
 -- ── Last user to process (open) payroll ──────────────────────────────────────
 open_last AS (
     SELECT o.CUSTOMER_UUID, o.USER_UUID
@@ -130,57 +154,6 @@ poster AS (
     FROM poster_email pe
     LEFT JOIN tw_by_guid  g  ON pe.USER_UUID = g.GUID
     LEFT JOIN tw_by_email te ON LOWER(pe.es_email) = te.lemail
-),
-
--- ══ ELIGIBILITY CRITERIA (8) ════════════════════════════════════════════════
-elig_tips AS (
-    SELECT DISTINCT t.CUSTOMER_UUID
-    FROM TOAST.SOURCE_EC.TIPS_CURRENT t JOIN ec_ids i ON t.CUSTOMER_UUID = i.EC_CUSTOMER_GUID
-),
-elig_pos AS (
-    SELECT DISTINCT cd.EC_CUSTOMER_GUID
-    FROM TOAST.ANALYTICS_CORE.CUSTOMER_DAILY d
-    JOIN cust_dd cd ON d.SALESFORCE_ACCOUNTID = cd.SALESFORCE_ACCOUNTID
-    JOIN ec_ids i   ON cd.EC_CUSTOMER_GUID = i.EC_CUSTOMER_GUID
-    WHERE d.dt = (SELECT MAX(dt) FROM TOAST.ANALYTICS_CORE.CUSTOMER_DAILY)
-      AND d.POS_STATUS = 'Live'
-),
-elig_tsauto AS (
-    SELECT s.CUSTOMER_UUID, MAX(LOWER(s.VALUE)) AS val
-    FROM TOAST.SOURCE_EC.CUSTOMER_SETTING_CURRENT s JOIN ec_ids i ON s.CUSTOMER_UUID = i.EC_CUSTOMER_GUID
-    WHERE s.SETTING_NAME = 'Auto-approve Time sheets in Payroll' GROUP BY 1
-),
-elig_post AS (
-    SELECT s.CUSTOMER_UUID, MAX(s.VALUE) AS val
-    FROM TOAST.SOURCE_EC.CUSTOMER_SETTING_CURRENT s JOIN ec_ids i ON s.CUSTOMER_UUID = i.EC_CUSTOMER_GUID
-    WHERE s.SETTING_NAME = 'Payroll Post Deadline' GROUP BY 1
-),
--- Bounces: any transaction type, last 6 months. DELETED is boolean FALSE for
--- most rows and NULL only on older ones — COALESCE, don't test IS NULL.
-elig_bounce AS (
-    SELECT DISTINCT b.CUSTOMER_UUID
-    FROM TOAST.SOURCE_EC.BOUNCED_PAYPERIOD_CURRENT b JOIN ec_ids i ON b.CUSTOMER_UUID = i.EC_CUSTOMER_GUID
-    WHERE DATEADD('millisecond', b.BOUNCE_DATE, '1970-01-01'::TIMESTAMP_NTZ)
-              >= DATEADD('month', -6, CURRENT_DATE()::TIMESTAMP_NTZ)
-      AND COALESCE(b.DELETED, FALSE) = FALSE
-),
--- Tax proxy: every active FEIN has posted tax rows in the current quarter
-tax_q AS (
-    SELECT DISTINCT p.FEIN_UUID
-    FROM TOAST.SOURCE_EC.PAYROLL_CURRENT p
-    JOIN TOAST.SOURCE_EC.PAYROLL_TAX_CURRENT t ON t.PAYROLL_UUID = p.UUID
-    WHERE p.CHECK_DATE >= TO_NUMBER(TO_CHAR(DATE_TRUNC('quarter', CURRENT_DATE()), 'YYYYMMDD'))
-      AND p.FEIN_UUID IS NOT NULL
-),
-elig_tax AS (
-    SELECT fe.CUSTOMER_UUID,
-           CASE WHEN COUNT_IF(fe.ACTIVE) = 0 THEN '?'   -- no active FEIN: undeterminable
-                WHEN COUNT_IF(fe.ACTIVE AND tq.FEIN_UUID IS NULL) = 0 THEN 'Y'
-                ELSE 'N' END AS val
-    FROM TOAST.EC_CORE.EC_CUSTOMER_FEIN fe
-    JOIN ec_ids i ON fe.CUSTOMER_UUID = i.EC_CUSTOMER_GUID
-    LEFT JOIN tax_q tq ON tq.FEIN_UUID = fe.UUID
-    GROUP BY 1
 )
 
 -- ── OUTPUT: one row per restaurant location ──────────────────────────────────
@@ -201,35 +174,26 @@ SELECT
          ELSE 'Detractor' END                               AS nps,
     COALESCE(tk.ticket_count, 0)                            AS tickets,
     IFF(sc.restaurant_guid IS NOT NULL, 'Yes', 'No')        AS sched,
-    IFF(et.CUSTOMER_UUID IS NOT NULL, 'Yes', 'No')          AS tips,
+    IFF(ta.CUSTOMER_UUID IS NOT NULL, 'Yes', 'No')          AS tips,
     NULLIF(p.poster_name, '')                               AS poster_name,
     p.poster_email                                          AS poster_email,
     TO_CHAR(c.FIRST_CHECK_DATE, 'YYYY-MM-DD')               AS first_payroll,
+    TO_CHAR(ecs.MOST_RECENT_CHECK_DATE, 'YYYY-MM-DD')       AS last_run,
+    COALESCE(ea.active_employees, 0)                        AS active_employees,
+    IFF(b6.CUSTOMER_UUID IS NOT NULL, 'Yes', 'No')          AS bounced_6mo,
     c.ACCOUNT_OWNER_NAME                                    AS rep,
     c.ACCOUNT_OWNER_EMAIL                                   AS rep_email,
-    LOWER(c.EC_COMPANY_CODE)                                AS cc,
-    -- 8 eligibility criteria
-    IFF(et.CUSTOMER_UUID IS NOT NULL, 'Y', 'N')             AS e_tips,
-    IFF(ecs.EC_CUSTOMER_STATUS = 'Active', 'Y', 'N')        AS e_active,
-    IFF(ep.EC_CUSTOMER_GUID IS NOT NULL, 'Y', 'N')          AS e_pos,
-    COALESCE(etx.val, '?')                                  AS e_tax,
-    IFF(ets.val = 'true', 'Y', 'N')                         AS e_tsauto,
-    IFF(c.FIRST_CHECK_DATE <= DATEADD('month', -3, CURRENT_DATE()), 'Y', 'N') AS e_live3,
-    IFF(eb.CUSTOMER_UUID IS NULL, 'Y', 'N')                 AS e_bounce,
-    IFF(epo.val IS NOT NULL AND epo.val <> '-1', 'Y', 'N')  AS e_post
+    LOWER(c.EC_COMPANY_CODE)                                AS cc
 FROM cohort c
 JOIN TOAST.EC_CORE.EC_CUSTOMER ecs ON c.EC_CUSTOMER_GUID = ecs.EC_CUSTOMER_GUID
                                   AND ecs.PAYROLL_STATUS = 'Live'
 LEFT JOIN loc_counts  lc  ON c.EC_CUSTOMER_GUID = lc.EC_CUSTOMER_GUID
+LEFT JOIN emp_active  ea  ON c.EC_CUSTOMER_GUID = ea.CUSTOMER_UUID
 LEFT JOIN nps         n   ON c.EC_CUSTOMER_GUID = n.EC_CUSTOMER_GUID
 LEFT JOIN tickets     tk  ON c.EC_CUSTOMER_GUID = tk.EC_CUSTOMER_GUID
 LEFT JOIN sched       sc  ON c.rguid = sc.restaurant_guid
 LEFT JOIN poster      p   ON c.EC_CUSTOMER_GUID = p.CUSTOMER_UUID
-LEFT JOIN elig_tips   et  ON c.EC_CUSTOMER_GUID = et.CUSTOMER_UUID
-LEFT JOIN elig_pos    ep  ON c.EC_CUSTOMER_GUID = ep.EC_CUSTOMER_GUID
-LEFT JOIN elig_tsauto ets ON c.EC_CUSTOMER_GUID = ets.CUSTOMER_UUID
-LEFT JOIN elig_post   epo ON c.EC_CUSTOMER_GUID = epo.CUSTOMER_UUID
-LEFT JOIN elig_bounce eb  ON c.EC_CUSTOMER_GUID = eb.CUSTOMER_UUID
-LEFT JOIN elig_tax    etx ON c.EC_CUSTOMER_GUID = etx.CUSTOMER_UUID
+LEFT JOIN tips_active ta  ON c.EC_CUSTOMER_GUID = ta.CUSTOMER_UUID
+LEFT JOIN bounce_6mo  b6  ON c.EC_CUSTOMER_GUID = b6.CUSTOMER_UUID
 QUALIFY ROW_NUMBER() OVER (PARTITION BY c.rguid ORDER BY ecs.MOST_RECENT_CHECK_DATE DESC NULLS LAST) = 1
 ORDER BY c.dist_office
