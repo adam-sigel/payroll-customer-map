@@ -50,7 +50,6 @@ for r in ROWS:
         'lastRun': r['LAST_RUN'] or '',
         'activeEmp': int(r['ACTIVE_EMPLOYEES']),
         'bounced': r['BOUNCED_6MO'],
-        'rep': (r['REP'] or '').strip(), 'email': (r['REP_EMAIL'] or '').strip(),
         'cc': cc,
         'emailed': o.get('last_emailed') or '',
         'visited': o.get('last_visited') or '',
@@ -133,10 +132,7 @@ HTML = f'''<!DOCTYPE html>
   .pu-chips {{ display:flex; gap:4px; flex-wrap:wrap; margin-bottom:7px; }}
   .chip {{ font-size:10px; padding:2px 6px; border-radius:3px; background:#f0efec; color:#52514e; font-weight:500; }}
   .chip.on {{ background:#e8f2ff; color:#1c5cab; }}
-  .pu-outreach {{ border-top:1px solid #e1e0d9; padding-top:7px; margin-bottom:7px; display:flex; gap:14px; }}
-  .pu-rep {{ font-size:11px; color:#52514e; border-top:1px solid #e1e0d9; padding-top:7px; }}
-  .pu-rep a {{ color:#2a78d6; text-decoration:none; }}
-  .pu-rep a:hover {{ text-decoration:underline; }}
+  .pu-outreach {{ border-top:1px solid #e1e0d9; padding-top:7px; display:flex; gap:14px; }}
 
   /* Pins */
   .map-pin {{ position:relative; width:24px; height:32px; cursor:pointer; }}
@@ -224,6 +220,13 @@ function posterHtml(c) {{
   return nm + (nm && em ? "<br>" : "") + em;
 }}
 
+// Emailed within the last 90 days: let the contact cool off before reaching out again.
+function emailedRecent(c) {{
+  if (!c.emailed) return false;
+  const days = (Date.now() - new Date(c.emailed + "T00:00:00").getTime()) / 86400000;
+  return days < 90;
+}}
+
 function makePopup(c) {{
   return `<div class="pu">
     <div class="pu-name">${{c.name}}</div>
@@ -251,10 +254,9 @@ function makePopup(c) {{
       ${{c.tips==="Yes"?'<span class="chip on">Tips Mgr</span>':'<span class="chip">Tips Mgr</span>'}}
     </div>
     <div class="pu-outreach">
-      <div><div class="pu-label">Last emailed</div><div class="pu-val">${{c.emailed||"—"}}</div></div>
+      <div><div class="pu-label">Last emailed</div><div class="pu-val ${{emailedRecent(c)?"bad":""}}">${{c.emailed||"—"}}</div></div>
       <div><div class="pu-label">Last visited</div><div class="pu-val">${{c.visited||"—"}}</div></div>
     </div>
-    <div class="pu-rep"><strong>${{c.rep}}</strong> &middot; <a href="mailto:${{c.email}}">${{c.email}}</a></div>
   </div>`;
 }}
 
