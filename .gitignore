@@ -7,3 +7,6 @@ __pycache__/
 # Plaintext customer data — index.html is password-gated on purpose
 map.source.html
 build/map_data.csv
+
+# Map password for encrypt.py — never commit this
+.env

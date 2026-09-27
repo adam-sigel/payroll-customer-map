@@ -6,13 +6,30 @@ The gate in index.html derives its key with PBKDF2-SHA256 / 100,000 iterations
 reuses the existing index.html as the gate template and swaps only the PAYLOAD
 line, which keeps the two in sync automatically.
 
-Usage:  python3 encrypt.py [plaintext.html]     # prompts for the password
+Usage:  python3 encrypt.py [plaintext.html]
+
+Reads the password from MAP_PASSWORD in .env (gitignored, repo root) if
+present; otherwise prompts interactively.
 """
 import base64, getpass, hashlib, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'map.source.html')
 OUT = os.path.join(ROOT, 'index.html')
+ENV_PATH = os.path.join(ROOT, '.env')
+
+
+def load_env_password():
+    if not os.path.exists(ENV_PATH):
+        return None
+    for line in open(ENV_PATH, encoding='utf-8'):
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, _, val = line.partition('=')
+        if key.strip() == 'MAP_PASSWORD':
+            return val.strip().strip('"').strip("'")
+    return None
 
 PAYLOAD_RE = re.compile(r'^const PAYLOAD = \{.*\};$', re.MULTILINE)
 
@@ -42,9 +59,13 @@ def main():
     if not PAYLOAD_RE.search(gate):
         sys.exit(f'{OUT}: no PAYLOAD line found — is it still the encrypted gate?')
 
-    pw = getpass.getpass('Map password: ')
-    if pw != getpass.getpass('Confirm: '):
-        sys.exit('Passwords do not match.')
+    pw = load_env_password()
+    if pw:
+        print(f'Using MAP_PASSWORD from {os.path.basename(ENV_PATH)}')
+    else:
+        pw = getpass.getpass('Map password: ')
+        if pw != getpass.getpass('Confirm: '):
+            sys.exit('Passwords do not match.')
     if not pw:
         sys.exit('Empty password.')
 
