@@ -13,9 +13,12 @@ snow sql -q "ALTER SESSION SET QUERY_TAG='claude-code:query-snowflake'; $(cat bu
 # 2. Generate the plaintext map (writes map.source.html)
 python3 build/gen_map.py
 
-# 3. Re-encrypt into index.html (prompts for the password)
+# 3. Re-encrypt into index.html
 python3 encrypt.py
 ```
+
+Step 3 reads the password from `MAP_PASSWORD` in a gitignored `.env` file if
+present, falling back to an interactive prompt otherwise.
 
 `map.source.html` and `build/map_data.csv` are gitignored — they hold customer
 names, addresses, and contact emails in the clear, which is the reason
