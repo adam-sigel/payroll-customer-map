@@ -96,22 +96,26 @@ Foxglove Terrace visited on 9/20," and it updates `outreach_log.csv` and
 pushes. (Calendar-based inference was considered and rejected — restaurant
 visits don't reliably show up as distinguishable calendar events.)
 
-**Drafting outreach emails — a Claude Code action, drafts only, never sends.**
-Not an in-map button — the map is a static page with no Gmail access. Instead,
-ask Claude Code to draft outreach for one or more customers (by name, or e.g.
-"everyone not-yet-emailed within 5 miles"). Claude:
-1. Looks up each customer's `poster_name` / `poster_email` from the current
-   extract.
-2. Fills the template below with `{first_name}` and `{next_month}` (computed
-   as the next calendar month).
-3. Creates a **Gmail draft** via `gws gmail users drafts create` — left in
-   your Drafts folder, unsent.
-4. You review, edit, and send manually from Gmail.
+**Drafting outreach emails — two ways in, both drafts only, never sends.**
 
-Once sent, the next outreach-log sync picks it up automatically via the Gmail
-Sent-folder scan — no separate "mark as emailed" step needed.
+- **In-map button.** Each card with a `poster_email` on file has a "Draft
+  email to {first_name}" button. It fills the template below (`{first_name}`
+  from `poster_name`, `{next_month}` computed client-side as the next
+  calendar month) and opens it as a **Gmail browser compose tab**
+  (`https://mail.google.com/mail/?view=cm&fs=1&to=...&su=...&body=...`) —
+  not the OS mail client. Gmail autosaves it to Drafts; nothing sends until
+  you click Send.
+- **Claude Code action**, for batches or filtered sets (e.g. "draft outreach
+  for everyone not-yet-emailed within 5 miles"): Claude looks up each
+  customer's `poster_name`/`poster_email`, fills the same template, and
+  creates a **Gmail draft** via `gws gmail users drafts create` directly in
+  your Drafts folder.
 
-Template (from your 2026-09-25 example, fields in `{braces}`):
+Once sent (either way), the next outreach-log sync picks it up automatically
+via the Gmail Sent-folder scan — no separate "mark as emailed" step needed.
+
+Template (from your 2026-09-25 example, fields in `{braces}`, stored at
+`build/outreach_template.txt`):
 
 > Hi {first_name},
 >
