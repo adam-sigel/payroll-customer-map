@@ -7,6 +7,7 @@ the repo root. Run encrypt.py afterwards to produce the password-gated
 index.html.
 """
 import csv, json, os
+from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CSV_PATH = os.path.join(ROOT, 'build', 'map_data.csv')
@@ -15,6 +16,10 @@ OUT_PATH = os.path.join(ROOT, 'map.source.html')
 
 ROWS = list(csv.DictReader(open(CSV_PATH)))
 OUTREACH = {r['cc']: r for r in csv.DictReader(open(OUTREACH_PATH))}
+
+# Reflects when the Snowflake extract was last pulled, not when this script
+# last ran — outreach-log-only syncs shouldn't make the data look fresher.
+last_refreshed = datetime.fromtimestamp(os.path.getmtime(CSV_PATH)).strftime('%m/%d/%Y')
 
 def f1(v):
     """Trim trailing .0 so distances render as 6.4 / 3 rather than 6.4 / 3.0."""
@@ -143,6 +148,9 @@ HTML = f'''<!DOCTYPE html>
 <body>
 <header>
   <h1>Payroll Customers — Boston Area</h1>
+  <span class="fl">Last Refreshed: {last_refreshed}</span>
+
+  <div class="dv"></div>
 
   <div class="fg">
     <span class="fl">NPS:</span>
