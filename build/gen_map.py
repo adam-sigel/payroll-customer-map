@@ -12,10 +12,12 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CSV_PATH = os.path.join(ROOT, 'build', 'map_data.csv')
 OUTREACH_PATH = os.path.join(ROOT, 'build', 'outreach_log.csv')
+TEMPLATE_PATH = os.path.join(ROOT, 'build', 'outreach_template.txt')
 OUT_PATH = os.path.join(ROOT, 'map.source.html')
 
 ROWS = list(csv.DictReader(open(CSV_PATH)))
 OUTREACH = {r['cc']: r for r in csv.DictReader(open(OUTREACH_PATH))}
+EMAIL_TEMPLATE = open(TEMPLATE_PATH, encoding='utf-8').read().rstrip('\n')
 
 # Reflects when the Snowflake extract was last pulled, not when this script
 # last ran — outreach-log-only syncs shouldn't make the data look fresher.
@@ -73,6 +75,7 @@ def js_obj(d):
     return '{' + ','.join(parts) + '}'
 
 data_js = '\n'.join(f'  {js_obj(d)},' for d in data)
+email_template_js = json.dumps(EMAIL_TEMPLATE, ensure_ascii=False)
 
 n_locs = len(data)
 n_cust = len({d['cc'] for d in data})
@@ -133,6 +136,7 @@ HTML = f'''<!DOCTYPE html>
   .chip {{ font-size:10px; padding:2px 6px; border-radius:3px; background:#f0efec; color:#52514e; font-weight:500; }}
   .chip.on {{ background:#e8f2ff; color:#1c5cab; }}
   .pu-outreach {{ border-top:1px solid #e1e0d9; padding-top:7px; display:flex; gap:14px; }}
+  .pu-draft-btn {{ width:100%; margin-top:9px; text-align:center; padding:6px 8px; }}
 
   /* Pins */
   .map-pin {{ position:relative; width:24px; height:32px; cursor:pointer; }}
@@ -192,6 +196,8 @@ const DATA = [
 {data_js}
 ];
 
+const EMAIL_TEMPLATE = {email_template_js};
+
 const NPS_COLOR = {{Promoter:"#0ca30c",Passive:"#eda100",Detractor:"#d03b3b","":"#898781"}};
 
 function pinColor(c) {{ return NPS_COLOR[c.nps] || "#898781"; }}
@@ -227,6 +233,22 @@ function emailedRecent(c) {{
   return days < 90;
 }}
 
+// Opens a prefilled Gmail compose tab (browser-based, not the OS mail client).
+// Gmail autosaves it as a draft; nothing is sent until the user hits Send.
+function draftEmail(cc) {{
+  const c = DATA.find(d => d.cc === cc);
+  if (!c || !c.pemail) return;
+  const firstName = (c.pname || '').trim().split(/\\s+/)[0] || 'there';
+  const nextMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1)
+    .toLocaleString('en-US', {{month: 'long'}});
+  const body = EMAIL_TEMPLATE.replace('{{first_name}}', firstName).replace('{{next_month}}', nextMonth);
+  const url = 'https://mail.google.com/mail/?view=cm&fs=1'
+    + '&to=' + encodeURIComponent(c.pemail)
+    + '&su=' + encodeURIComponent('A visit from Toast Payroll')
+    + '&body=' + encodeURIComponent(body);
+  window.open(url, '_blank');
+}}
+
 function makePopup(c) {{
   return `<div class="pu">
     <div class="pu-name">${{c.name}}</div>
@@ -257,6 +279,7 @@ function makePopup(c) {{
       <div><div class="pu-label">Last emailed</div><div class="pu-val ${{emailedRecent(c)?"bad":""}}">${{c.emailed||"—"}}</div></div>
       <div><div class="pu-label">Last visited</div><div class="pu-val">${{c.visited||"—"}}</div></div>
     </div>
+    ${{c.pemail ? `<button class="fb pu-draft-btn" onclick="draftEmail('${{c.cc}}')">Draft email to ${{(c.pname||'').trim().split(/\\s+/)[0] || 'contact'}}</button>` : ''}}
   </div>`;
 }}
 
