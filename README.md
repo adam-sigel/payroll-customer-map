@@ -10,7 +10,8 @@ single password-gated `index.html`.
 snow sql -q "ALTER SESSION SET QUERY_TAG='claude-code:query-snowflake'; $(cat build/map_build.sql)" \
   -c toast --format CSV > build/map_data.csv
 
-# 2. Generate the plaintext map (writes map.source.html)
+# 2. Generate the plaintext map (writes map.source.html; reads the outreach
+#    Sheet, so gws must be logged in)
 python3 build/gen_map.py
 
 # 3. Re-encrypt into index.html
@@ -40,19 +41,28 @@ it is not recoverable from the ciphertext.
 
 ## Outreach tracking
 
-`build/outreach_log.csv` (`cc, last_emailed, last_visited`) is git-tracked —
-just company codes and dates, no PII. `gen_map.py` left-joins it onto the
-Snowflake extract by `cc`.
+The outreach log is a private Google Sheet in Adam's Drive ("Payroll Customer
+Map — Outreach Log", tab `Outreach`), linked from the map header. Columns:
+`cc`, Restaurant, Locations, Contact name, Contact email, Last emailed, Last
+visited, Notes. It lists only customers that have been emailed or visited.
+`gen_map.py` reads it through the `gws` CLI (Sheet ID from `OUTREACH_SHEET_ID`
+in `.env`) and left-joins it onto the Snowflake extract by `cc`; only `cc` and
+the two date columns feed the map. If the read fails, the build stops rather
+than publishing a map with every pin reset to "not emailed".
+
+Edits in the Sheet don't show on the map until it is rebuilt (steps 2–3
+above) and `index.html` is pushed.
 
 - **Emailed** is synced from Gmail on demand: ask Claude Code to "sync the
   outreach log" — it does one bulk Sent-mail search via the `gws` CLI, matches
-  recipients against each customer's `poster_email`, and updates the log. Only
+  recipients against each customer's `poster_email`, updates the Sheet (adding
+  rows for newly contacted customers), then rebuilds and pushes. Only
   catches customers with a `poster_email` on file, and only if you emailed
   that exact address.
-- **Visited** is manual — tell Claude Code, e.g. "mark Foxglove Terrace
-  visited on 9/20."
-- **Drafting outreach emails** is a Claude Code action, not an in-map button:
-  ask it to draft for a customer (or a filtered set) and it fills
+- **Visited** is manual — type the date into the Sheet, or tell Claude Code,
+  e.g. "mark Foxglove Terrace visited on 9/20."
+- **Drafting outreach emails** — use the in-card "Draft email" button, or ask
+  Claude Code to draft for a customer (or a filtered set); it fills
   `build/outreach_template.txt` and creates an unsent Gmail draft via
   `gws gmail users drafts create`. Nothing is ever sent automatically.
 

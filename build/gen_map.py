@@ -1,22 +1,81 @@
 #!/usr/bin/env python3
 """Rebuild the payroll customer map HTML from the Snowflake extract.
 
-Reads build/map_data.csv (the map_build.sql extract) and build/outreach_log.csv
-(emailed/visited tracking), and writes the plaintext map to map.source.html at
-the repo root. Run encrypt.py afterwards to produce the password-gated
-index.html.
+Reads build/map_data.csv (the map_build.sql extract) and the outreach log
+Google Sheet (emailed/visited tracking, via the gws CLI), and writes the
+plaintext map to map.source.html at the repo root. Run encrypt.py afterwards
+to produce the password-gated index.html.
+
+The Sheet ID comes from OUTREACH_SHEET_ID in .env (gitignored, repo root).
 """
-import csv, json, os
+import csv, json, os, subprocess, sys
 from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CSV_PATH = os.path.join(ROOT, 'build', 'map_data.csv')
-OUTREACH_PATH = os.path.join(ROOT, 'build', 'outreach_log.csv')
 TEMPLATE_PATH = os.path.join(ROOT, 'build', 'outreach_template.txt')
 OUT_PATH = os.path.join(ROOT, 'map.source.html')
+ENV_PATH = os.path.join(ROOT, '.env')
+OUTREACH_RANGE = 'Outreach!A:H'
+
+
+def load_env(name):
+    if not os.path.exists(ENV_PATH):
+        return None
+    for line in open(ENV_PATH, encoding='utf-8'):
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, _, val = line.partition('=')
+        if key.strip() == name:
+            return val.strip().strip('"').strip("'")
+    return None
+
+
+def iso_date(v):
+    """Normalize a Sheet date cell to YYYY-MM-DD; hand-typed cells may come back as M/D/YYYY."""
+    v = (v or '').strip()
+    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y'):
+        try:
+            return datetime.strptime(v, fmt).strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+    return v
+
+
+def load_outreach(sheet_id):
+    """cc -> {last_emailed, last_visited} from the outreach Sheet.
+
+    Fails loudly rather than building with an empty log, which would silently
+    reset every pin to "not emailed".
+    """
+    res = subprocess.run(
+        ['gws', 'sheets', 'spreadsheets', 'values', 'get', '--params',
+         json.dumps({'spreadsheetId': sheet_id, 'range': OUTREACH_RANGE})],
+        capture_output=True, text=True)
+    if res.returncode != 0:
+        sys.exit(f'Reading the outreach Sheet failed (is gws logged in?):\n{res.stderr}')
+    values = json.loads(res.stdout).get('values', [])
+    if not values:
+        sys.exit('Outreach Sheet came back empty; refusing to build.')
+    hdr = values[0]
+    out = {}
+    for row in values[1:]:
+        r = dict(zip(hdr, row + [''] * (len(hdr) - len(row))))
+        cc = r.get('cc', '').strip()
+        if cc:
+            out[cc] = {'last_emailed': iso_date(r.get('Last emailed')),
+                       'last_visited': iso_date(r.get('Last visited'))}
+    return out
+
+
+SHEET_ID = load_env('OUTREACH_SHEET_ID')
+if not SHEET_ID:
+    sys.exit('OUTREACH_SHEET_ID missing from .env')
+SHEET_URL = f'https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit'
 
 ROWS = list(csv.DictReader(open(CSV_PATH)))
-OUTREACH = {r['cc']: r for r in csv.DictReader(open(OUTREACH_PATH))}
+OUTREACH = load_outreach(SHEET_ID)
 EMAIL_TEMPLATE = open(TEMPLATE_PATH, encoding='utf-8').read().rstrip('\n')
 
 # Reflects when the Snowflake extract was last pulled, not when this script
@@ -109,6 +168,8 @@ HTML = f'''<!DOCTYPE html>
   .fb {{ font-size:11px; padding:3px 8px; border-radius:4px; border:1px solid var(--gridline); background:var(--surface-1); color:var(--text-secondary); cursor:pointer; white-space:nowrap; transition:background .1s,color .1s; }}
   .fb:hover {{ background:var(--surface-2); }}
   .fb.active {{ background:var(--text-primary); color:var(--surface-1); border-color:var(--text-primary); }}
+  .hdr-link {{ color:#2a78d6; text-decoration:none; }}
+  .hdr-link:hover {{ text-decoration:underline; }}
   .search {{ position:relative; display:flex; align-items:center; }}
   .search input {{ font-size:11px; padding:3px 22px 3px 8px; width:220px; border-radius:4px; border:1px solid var(--gridline); background:var(--surface-1); color:var(--text-primary); }}
   .search input:focus {{ outline:none; border-color:var(--text-secondary); }}
@@ -154,6 +215,7 @@ HTML = f'''<!DOCTYPE html>
 <header>
   <h1>Payroll Customers — Boston Area</h1>
   <span class="fl">Last Refreshed: {last_refreshed}</span>
+  <a class="fl hdr-link" href="{SHEET_URL}" target="_blank" rel="noopener">Outreach log ↗</a>
 
   <div class="dv"></div>
 

@@ -74,10 +74,16 @@ single 15mi radius).
 
 ## Outreach tracking
 
-**Storage:** a new git-tracked file, `build/outreach_log.csv`, columns
-`cc, last_emailed, last_visited`. ~350 rows, contains only company codes and
-dates — safe to commit (no names/emails/addresses). `gen_map.py` left-joins it
-onto the Snowflake extract by `cc`.
+**Storage:** a private Google Sheet in Adam's Drive ("Payroll Customer Map —
+Outreach Log", tab `Outreach`), linked from the map header. Columns `cc`,
+Restaurant, Locations, Contact name, Contact email, Last emailed, Last visited,
+Notes — one row per customer that has been emailed or visited (not the whole
+cohort). It holds names and emails, which is why it lives in Drive rather than
+the public repo (it replaced the git-tracked `build/outreach_log.csv` on
+2026-10-23). `gen_map.py` reads it via `gws` using `OUTREACH_SHEET_ID` from
+`.env` and left-joins `cc`/dates onto the Snowflake extract; it exits rather
+than building if the read fails. Sheet edits reach the map only on the next
+rebuild + push.
 
 **"Emailed" — inferred automatically, on demand.** No new credentials or
 backend needed. When asked (e.g. "sync the outreach log"), Claude:
@@ -88,7 +94,8 @@ backend needed. When asked (e.g. "sync the outreach log"), Claude:
    — not one query per customer.
 3. Builds a `recipient_email → most_recent_sent_date` map from the results.
 4. Joins that against each customer's `poster_email` and writes
-   `last_emailed` into `outreach_log.csv`.
+   `last_emailed` into the outreach Sheet (never moving a date backwards;
+   appending a row for any newly contacted customer).
 5. Reruns `gen_map.py` → `encrypt.py` → commits and pushes `index.html`.
 
 Caveat: only catches customers with a `poster_email` on file (215/217 in the
@@ -96,8 +103,9 @@ current extract, per the existing README caveat) and only when the email is
 sent to that exact address.
 
 **"Visited" — manual, on demand.** Tell Claude Code directly, e.g. "mark
-Foxglove Terrace visited on 9/20," and it updates `outreach_log.csv` and
-pushes. (Calendar-based inference was considered and rejected — restaurant
+Foxglove Terrace visited on 9/20," and it updates the outreach Sheet,
+rebuilds, and pushes. You can also just type the date into the Sheet.
+(Calendar-based inference was considered and rejected — restaurant
 visits don't reliably show up as distinguishable calendar events.)
 
 **Drafting outreach emails — two ways in, both drafts only, never sends.**
@@ -162,5 +170,5 @@ Template (from your 2026-09-25 example, fields in `{braces}`, stored at
 - Gmail search lookback window for the "emailed" sync is proposed at 12
   months — adjustable.
 - If a company code (`cc`) is ever reassigned, its outreach history in
-  `outreach_log.csv` goes stale silently (shows as "not emailed" until
+  the outreach Sheet goes stale silently (shows as "not emailed" until
   re-synced). Rare enough not to design around now.
