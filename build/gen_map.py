@@ -109,6 +109,11 @@ HTML = f'''<!DOCTYPE html>
   .fb {{ font-size:11px; padding:3px 8px; border-radius:4px; border:1px solid var(--gridline); background:var(--surface-1); color:var(--text-secondary); cursor:pointer; white-space:nowrap; transition:background .1s,color .1s; }}
   .fb:hover {{ background:var(--surface-2); }}
   .fb.active {{ background:var(--text-primary); color:var(--surface-1); border-color:var(--text-primary); }}
+  .search {{ position:relative; display:flex; align-items:center; }}
+  .search input {{ font-size:11px; padding:3px 22px 3px 8px; width:220px; border-radius:4px; border:1px solid var(--gridline); background:var(--surface-1); color:var(--text-primary); }}
+  .search input:focus {{ outline:none; border-color:var(--text-secondary); }}
+  .search-clear {{ position:absolute; right:4px; border:none; background:none; color:var(--text-secondary); cursor:pointer; font-size:13px; line-height:1; padding:0 2px; display:none; }}
+  .search-msg {{ font-size:11px; color:var(--text-secondary); white-space:nowrap; }}
   .legend {{ display:flex; gap:9px; align-items:center; margin-left:auto; flex-wrap:wrap; }}
   .li {{ display:flex; align-items:center; gap:4px; font-size:10px; color:var(--text-secondary); }}
   .ld {{ width:8px; height:8px; border-radius:50%; border:1.5px solid rgba(0,0,0,0.15); flex-shrink:0; }}
@@ -177,6 +182,16 @@ HTML = f'''<!DOCTYPE html>
     <button class="fb active" data-visited="all">All</button>
     <button class="fb" data-visited="yes">Visited</button>
     <button class="fb" data-visited="no">Not visited</button>
+  </div>
+
+  <div class="dv"></div>
+
+  <div class="fg">
+    <div class="search">
+      <input id="search" type="text" placeholder="Search email, contact, or restaurant" autocomplete="off">
+      <button class="search-clear" id="search-clear" title="Clear search">&times;</button>
+    </div>
+    <span class="search-msg" id="search-msg"></span>
   </div>
 
   <div class="legend">
@@ -304,10 +319,17 @@ noteCtrl.onAdd = () => {{
 noteCtrl.addTo(map);
 
 const markerLayer = L.layerGroup().addTo(map);
-let activeNps="all", activeEmailed="all", activeVisited="all";
+let activeNps="all", activeEmailed="all", activeVisited="all", searchQ="";
+
+// Case-insensitive substring match on contact email, contact name, and restaurant/location name.
+function matchesSearch(c) {{
+  if (!searchQ) return true;
+  return [c.pemail, c.pname, c.name].some(v => (v || "").toLowerCase().includes(searchQ));
+}}
 
 function renderMarkers() {{
   markerLayer.clearLayers();
+  const hits = [];
   DATA.forEach(c => {{
     if (activeNps!=="all" && activeNps!=="none" && c.nps!==activeNps) return;
     if (activeNps==="none" && c.nps!=="") return;
@@ -315,13 +337,41 @@ function renderMarkers() {{
     if (activeEmailed==="no"  && c.emailed) return;
     if (activeVisited==="yes" && !c.visited) return;
     if (activeVisited==="no"  && c.visited) return;
-    L.marker([c.lat,c.lon],{{icon:makePinIcon(pinColor(c),c.locs)}})
+    if (!matchesSearch(c)) return;
+    hits.push(L.marker([c.lat,c.lon],{{icon:makePinIcon(pinColor(c),c.locs)}})
       .bindPopup(makePopup(c),{{maxWidth:340,minWidth:300}})
-      .addTo(markerLayer);
+      .addTo(markerLayer));
   }});
+  return hits;
+}}
+
+// Search zooms to its results: one hit opens its card, several fit the map to all of them.
+function applySearch() {{
+  const hits = renderMarkers();
+  const msg = document.getElementById("search-msg");
+  document.getElementById("search-clear").style.display = searchQ ? "block" : "none";
+  if (!searchQ) {{ msg.textContent = ""; return; }}
+  msg.textContent = hits.length ? `${{hits.length}} match${{hits.length===1?"":"es"}}` : "No matches";
+  if (hits.length === 1) {{
+    map.setView(hits[0].getLatLng(), 15);
+    hits[0].openPopup();
+  }} else if (hits.length > 1) {{
+    map.fitBounds(L.featureGroup(hits).getBounds(), {{padding:[40,40], maxZoom:15}});
+  }}
 }}
 
 renderMarkers();
+
+let searchTimer;
+const searchInput = document.getElementById("search");
+searchInput.addEventListener("input", () => {{
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {{ searchQ = searchInput.value.trim().toLowerCase(); applySearch(); }}, 250);
+}});
+searchInput.addEventListener("keydown", e => {{ if (e.key === "Escape") document.getElementById("search-clear").click(); }});
+document.getElementById("search-clear").addEventListener("click", () => {{
+  searchInput.value = ""; searchQ = ""; applySearch(); searchInput.focus();
+}});
 
 [["nps",v=>activeNps=v],["emailed",v=>activeEmailed=v],["visited",v=>activeVisited=v]].forEach(([attr,setter])=>{{
   document.querySelectorAll(`[data-${{attr}}]`).forEach(btn=>{{
@@ -329,7 +379,7 @@ renderMarkers();
       document.querySelectorAll(`[data-${{attr}}]`).forEach(b=>b.classList.remove("active"));
       btn.classList.add("active");
       setter(btn.dataset[attr]);
-      renderMarkers();
+      applySearch();
     }});
   }});
 }});
