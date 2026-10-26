@@ -42,8 +42,8 @@ single 15mi radius).
 - **NPS:** All / Promoters / Passives / Detractors / No NPS — unchanged.
 - **Emailed:** All / Emailed / Not emailed — new.
 - **Visited:** All / Visited / Not visited — new.
-- **Search:** free-text box matching contact email, contact name, or
-  restaurant/location name (case-insensitive substring). Narrows on top of
+- **Search:** free-text box matching contact email, contact name,
+  restaurant/location name, or company code (`cc`) (case-insensitive substring). Narrows on top of
   the button filters; one match zooms to the pin and opens its card, several
   fit the map to all of them.
 

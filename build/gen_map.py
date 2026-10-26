@@ -250,7 +250,7 @@ HTML = f'''<!DOCTYPE html>
 
   <div class="fg">
     <div class="search">
-      <input id="search" type="text" placeholder="Search email, contact, or restaurant" autocomplete="off">
+      <input id="search" type="text" placeholder="Search email, contact, restaurant, or code" autocomplete="off">
       <button class="search-clear" id="search-clear" title="Clear search">&times;</button>
     </div>
     <span class="search-msg" id="search-msg"></span>
@@ -384,10 +384,10 @@ noteCtrl.addTo(map);
 const markerLayer = L.layerGroup().addTo(map);
 let activeNps="all", activeEmailed="all", activeVisited="all", searchQ="";
 
-// Case-insensitive substring match on contact email, contact name, and restaurant/location name.
+// Case-insensitive substring match on contact email, contact name, restaurant/location name, and company code.
 function matchesSearch(c) {{
   if (!searchQ) return true;
-  return [c.pemail, c.pname, c.name].some(v => (v || "").toLowerCase().includes(searchQ));
+  return [c.pemail, c.pname, c.name, c.cc].some(v => (v || "").toLowerCase().includes(searchQ));
 }}
 
 function renderMarkers() {{
