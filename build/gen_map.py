@@ -342,6 +342,7 @@ function makePopup(c) {{
       <div><div class="pu-label">First payroll</div><div class="pu-val">${{c.fp||"—"}}</div></div>
       <div><div class="pu-label">Last payroll run</div><div class="pu-val">${{c.lastRun||"—"}}</div></div>
       <div><div class="pu-label">Bounced (6mo)</div><div class="pu-val ${{c.bounced==="Yes"?"bad":""}}">${{c.bounced}}</div></div>
+      <div><div class="pu-label">Company code</div><div class="pu-val">${{c.cc||"—"}}</div></div>
     </div>
     <div class="pu-poster">
       <div class="pu-label">Last processed payroll</div>
