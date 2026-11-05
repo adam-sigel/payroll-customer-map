@@ -42,6 +42,9 @@ single 15mi radius).
 - **NPS:** All / Promoters / Passives / Detractors / No NPS — unchanged.
 - **Emailed:** All / Emailed / Not emailed — new.
 - **Visited:** All / Visited / Not visited — new.
+- **Has:** Scheduling / Tips Mgr toggle chips. Off by default; with both on, a
+  customer must have both. No Payroll chip — every pin is payroll-Live.
+- **First payroll on/after:** date picker on `fp`; empty shows everyone.
 - **Search:** free-text box matching contact email, contact name,
   restaurant/location name, or company code (`cc`) (case-insensitive substring). Narrows on top of
   the button filters; one match zooms to the pin and opens its card, several

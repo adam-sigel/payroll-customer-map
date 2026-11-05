@@ -172,6 +172,8 @@ HTML = f'''<!DOCTYPE html>
   .hdr-link:hover {{ text-decoration:underline; }}
   .search {{ position:relative; display:flex; align-items:center; }}
   .search input {{ font-size:11px; padding:3px 22px 3px 8px; width:220px; border-radius:4px; border:1px solid var(--gridline); background:var(--surface-1); color:var(--text-primary); }}
+  .date-in {{ font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid var(--gridline); background:var(--surface-1); color:var(--text-primary); font-family:inherit; }}
+  .date-in:focus {{ outline:none; border-color:var(--text-secondary); }}
   .search input:focus {{ outline:none; border-color:var(--text-secondary); }}
   .search-clear {{ position:absolute; right:4px; border:none; background:none; color:var(--text-secondary); cursor:pointer; font-size:13px; line-height:1; padding:0 2px; display:none; }}
   .search-msg {{ font-size:11px; color:var(--text-secondary); white-space:nowrap; }}
@@ -244,6 +246,22 @@ HTML = f'''<!DOCTYPE html>
     <button class="fb active" data-visited="all">All</button>
     <button class="fb" data-visited="yes">Visited</button>
     <button class="fb" data-visited="no">Not visited</button>
+  </div>
+
+  <div class="dv"></div>
+
+  <div class="fg">
+    <span class="fl">Has:</span>
+    <button class="fb" data-prod="sched">Scheduling</button>
+    <button class="fb" data-prod="tips">Tips Mgr</button>
+  </div>
+
+  <div class="dv"></div>
+
+  <div class="fg">
+    <span class="fl">First payroll on/after:</span>
+    <input id="fp-min" class="date-in" type="date">
+    <button class="search-clear" id="fp-clear" title="Clear date" style="position:static">&times;</button>
   </div>
 
   <div class="dv"></div>
@@ -383,6 +401,9 @@ noteCtrl.addTo(map);
 
 const markerLayer = L.layerGroup().addTo(map);
 let activeNps="all", activeEmailed="all", activeVisited="all", searchQ="";
+// Product chips are independent toggles; with several on, a customer must have all of them.
+const activeProds = new Set();
+let fpMin = "";  // YYYY-MM-DD; ISO strings compare correctly as text
 
 // Case-insensitive substring match on contact email, contact name, restaurant/location name, and company code.
 function matchesSearch(c) {{
@@ -400,6 +421,8 @@ function renderMarkers() {{
     if (activeEmailed==="no"  && c.emailed) return;
     if (activeVisited==="yes" && !c.visited) return;
     if (activeVisited==="no"  && c.visited) return;
+    for (const p of activeProds) if (c[p] !== "Yes") return;
+    if (fpMin && (!c.fp || c.fp < fpMin)) return;
     if (!matchesSearch(c)) return;
     hits.push(L.marker([c.lat,c.lon],{{icon:makePinIcon(pinColor(c),c.locs)}})
       .bindPopup(makePopup(c),{{maxWidth:340,minWidth:300}})
@@ -446,6 +469,25 @@ document.getElementById("search-clear").addEventListener("click", () => {{
     }});
   }});
 }});
+
+document.querySelectorAll("[data-prod]").forEach(btn => {{
+  btn.addEventListener("click", () => {{
+    const p = btn.dataset.prod;
+    if (activeProds.has(p)) activeProds.delete(p); else activeProds.add(p);
+    btn.classList.toggle("active", activeProds.has(p));
+    applySearch();
+  }});
+}});
+
+const fpInput = document.getElementById("fp-min");
+const fpClear = document.getElementById("fp-clear");
+function setFpMin() {{
+  fpMin = fpInput.value;
+  fpClear.style.display = fpMin ? "block" : "none";
+  applySearch();
+}}
+fpInput.addEventListener("change", setFpMin);
+fpClear.addEventListener("click", () => {{ fpInput.value = ""; setFpMin(); }});
 </script>
 </body>
 </html>
